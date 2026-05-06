@@ -3,6 +3,7 @@
 - [x] Selection Crop
 - [x] Visible Screen
 - [ ] Zoom In/Out
+- [ ] add logo to extension
 
 ### For Full Page Screenshot
 **Scroll Stitch strategy**
