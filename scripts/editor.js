@@ -1,3 +1,5 @@
+//nhakocapture by kimzam
+
 document.addEventListener("DOMContentLoaded", async () => {
   const canvas = document.getElementById("screenshotCanvas");
   const ctx = canvas.getContext("2d");
@@ -114,36 +116,44 @@ document.addEventListener("DOMContentLoaded", async () => {
     selectionExists = false;
   });
 
+
   const copyToClipboard = () => {
     canvas.toBlob((blob) => {
-      if (!blob) return alert("Error: Canvas is empty!"); // Safety check!
+      if (!blob) return alert("Error: Canvas is empty!"); 
       
       navigator.clipboard.write([
         new ClipboardItem({ "image/png": blob })
       ]).then(() => {
         const btn = document.getElementById("copyBtn");
         btn.innerText = "Copied!";
-        setTimeout(() => btn.innerText = "Copy to Clipboard", 2000);
+        // Close the window after 600ms so the user sees the "Copied!" text briefly
+        setTimeout(() => window.close(), 600);
       }).catch(err => console.error("Clipboard error:", err));
     });
   };
 
   document.getElementById("copyBtn").addEventListener("click", copyToClipboard);
 
+  // Keyboard Shortcuts: Ctrl+C to Copy, Escape to close window
   document.addEventListener("keydown", (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
       e.preventDefault();
       copyToClipboard();
     }
+    if (e.key === "Escape") {
+      window.close(); // Close the editor instantly
+    }
   });
 
   document.getElementById("saveBtn").addEventListener("click", () => {
-    // Safety check so it doesn't download corrupted 0-byte files
     if (canvas.width === 0 || canvas.height === 0) return alert("Nothing to save!");
     
     const link = document.createElement("a");
     link.download = `Screenshot_${new Date().getTime()}.png`;
     link.href = canvas.toDataURL("image/png");
     link.click();
+    
+    // Close the editor instantly after saving
+    setTimeout(() => window.close(), 100);
   });
-});
+  });

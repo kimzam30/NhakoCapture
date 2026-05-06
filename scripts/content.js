@@ -1,3 +1,6 @@
+//nhakocapture by kimzam
+
+
 if (!document.getElementById("brave-snap-overlay")) {
   
   const overlay = document.createElement("div");
@@ -116,3 +119,10 @@ if (!document.getElementById("brave-snap-overlay")) {
   cancelBtn.onclick = () => overlay.remove();
   document.body.appendChild(overlay);
 }
+
+document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      if (selectionBox) selectionBox.remove();
+      if (overlay) overlay.remove();
+    }
+  });

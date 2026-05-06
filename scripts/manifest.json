@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NhakoCapture",
   "version": "1.0",
-  "description": "A floating screenshot tool.",
+  "description": "A floating screenshot tool by kimzam",
   "permissions": [
     "activeTab",
     "storage",
@@ -12,6 +12,6 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Nhako Screenshot"
+    "default_title": "Nhako Screenshot by kimzam"
   }
 }
