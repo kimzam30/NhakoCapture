@@ -1,8 +1,8 @@
 ## Complete Features
-[ ] Full Page Screenshot
-[x] Selection Crop
-[x] Visible Screen
-[ ] Zoom In/Out
+- [ ] Full Page Screenshot
+- [x] Selection Crop
+- [x] Visible Screen
+- [ ] Zoom In/Out
 
 ### For Full Page Screenshot
 **Scroll Stitch strategy**
@@ -11,4 +11,4 @@
 - [ ] Offscreen document - Manifest V3, A hidden document used to create a giant ```<canvas>``` that stitches all the frames into one massive PNG
 
 ## Bug Fixes
-[ ] Save Button after ss, no popup for destination
+- [ ] Save Button after ss, no popup for destination
