@@ -15,22 +15,41 @@ if (!document.getElementById("brave-snap-overlay")) {
   const btnContainer = document.createElement("div");
   btnContainer.style.cssText = "display: flex; gap: 15px;";
 
-  const createBtn = (text, bgColor) => {
+const createBtn = (svgCode, text, bgColor) => {
     const btn = document.createElement("button");
-    btn.innerText = text;
+    
+    btn.innerHTML = `
+      <div style="display: flex; align-items: center; gap: 8px;">
+        ${svgCode}
+        <span>${text}</span>
+      </div>
+    `;
+    
     btn.style.cssText = `
       background: ${bgColor}; color: white; border: none; padding: 10px 18px;
       border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer;
       box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.1s;
     `;
+    
+    const svg = btn.querySelector("svg");
+    if (svg) {
+      svg.style.width = "18px";
+      svg.style.height = "18px";
+      svg.style.stroke = "currentColor"; 
+    }
+
     btn.onmouseover = () => btn.style.transform = "scale(1.05)";
     btn.onmouseout = () => btn.style.transform = "scale(1)";
     return btn;
   };
 
-  const captureBtn = createBtn("📸 Capture Visible Page", "#8a2be2");
-  const cropBtn = createBtn("✂️ Crop Selection", "#8a2be2");
-  const cancelBtn = createBtn("❌ Cancel", "#555555");
+  const cameraIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
+  const cropIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crop"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>`;
+  const cancelIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
+
+  const captureBtn = createBtn(cameraIcon, "Capture Visible Page", "#8a2be2");
+  const cropBtn = createBtn(cropIcon, "Crop Selection", "#8a2be2");
+  const cancelBtn = createBtn(cancelIcon, "Cancel", "#555555");
 
   btnContainer.append(captureBtn, cropBtn, cancelBtn);
   overlay.appendChild(btnContainer);
