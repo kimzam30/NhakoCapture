@@ -83,6 +83,18 @@ Since this extension is highly optimized for power-user workflows, it can be loa
     *   Navigator.clipboard API (For binary Blob copy/pasting)
         
 
+### Future Updates
+- Quick Annotations
+    - [ ] arrow tool
+    - [ ] rectangle highlight
+    - [ ] blur tool
+- [ ] Full Page Screenshot
+- [x] Selection Crop
+- [x] Visible Screen
+- [ ] Zoom In/Out
+- [ ] add logo to extension
+- ***More Bug Fixes***
+
 ### 📝 License & Credits
 
-Created and maintained by **kimzam**.Built as a passion project to optimize personal workflows and restore the "Opera Feel" to the Brave Browser ecosystem.
+Created and maintained by **kimzam**. Built as a passion project to optimize personal workflows and restore the "Opera Feel" to the Brave Browser ecosystem.
