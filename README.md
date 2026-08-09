@@ -1,100 +1,81 @@
-📸 Nhako Capture
-================
+# Nhako Capture
 
-**By kimzam**
+A Chromium screenshot extension that brings Opera's native capture workflow to Brave, Chrome, and Edge — floating editor, live cropping, straight to clipboard, without hijacking a new tab.
 
-A lightweight, high-performance Chromium browser extension that brings the beloved, native Opera screenshot workflow to Brave and other Chromium browsers.
+![Manifest V3](https://img.shields.io/badge/Manifest-V3-4285F4?style=flat-square&logo=googlechrome&logoColor=white)
+![JavaScript](https://img.shields.io/badge/Vanilla_JS-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![No dependencies](https://img.shields.io/badge/dependencies-none-success?style=flat-square)
 
-Tired of screenshot extensions that hijack your workflow by forcing open annoying new tabs? **Nhako Capture** leverages modern Manifest V3 APIs to spawn a native, floating UI over your active tabs, providing lightning-fast screen captures, transparent live-cropping, and seamless clipboard integration without ever leaving your current context.
+---
 
-### ✨ Key Features
+## Why
 
-*   **🪟 True Floating Editor:** Bypasses the standard "new tab" sandbox restriction. Opens a clean, dedicated popup window that floats beside your work.
-    
-*   **✂️ Live Transparent Cropping:** Click "Crop Selection" to trigger a crosshair overlay on the live website. Drag to perfectly cut out exactly what you need, aided by a cinematic dark shadow overlay.
-    
-*   **📸 Instant Visible Capture:** Snap the entire visible viewport with a single click.
-    
-*   **⚡ Native Keyboard Shortcuts:**
-    
-    *   Mash Ctrl + C (or Cmd + C) in the editor to instantly copy the image to your clipboard.
-        
-    *   Hit Esc to instantly cancel a live crop or close the editor window.
-        
-*   **🛡️ Privacy First & Lean:** Zero telemetry, zero external servers, and no bloated drawing libraries. It runs entirely locally on standard HTML5 Canvas.
-    
-*   **⚙️ Smart Fallbacks:** Built-in safeguards prevent crashes on restricted browser pages (like settings or extension stores) by intelligently falling back to instant-capture mode.
-    
+Most screenshot extensions break your flow: they force open a new tab, load a heavy drawing library, and bury "copy to clipboard" behind three clicks. Nhako Capture uses Manifest V3 APIs to spawn a small floating editor window beside your work, so the page you were reading never goes away.
 
-### 🚀 Installation (Developer Mode)
+---
 
-Since this extension is highly optimized for power-user workflows, it can be loaded directly into your browser via Developer Mode:
+## Features
 
-1.  **Clone or Download** this repository to your local machine.
-    
-2.  Open your Chromium-based browser (Brave, Chrome, Edge) and navigate to the extensions page:
-    
-    *   Brave: brave://extensions
-        
-    *   Chrome: chrome://extensions
-        
-3.  Toggle on **Developer mode** in the top right corner.
-    
-4.  Click the **Load unpacked** button in the top left.
-    
-5.  Select the NhakoCapture folder on your computer.
-    
-6.  _Tip: Click the puzzle piece icon in your browser toolbar and "Pin" Nhako Capture for quick access!_
-    
+- **Floating editor** — a dedicated popup window rather than a new tab, so your context survives.
+- **Live transparent cropping** — a crosshair overlay on the live page with a dimmed surround; drag to select exactly what you want.
+- **Instant viewport capture** — snap everything visible in one click.
+- **Keyboard-first** — `Ctrl`/`Cmd + C` copies the image and closes the editor; `Esc` cancels a crop or dismisses the window.
+- **Re-crop in the editor** — drag inside the editor to trim a second time before saving.
+- **Local and private** — no telemetry, no servers, no drawing libraries. Everything runs on HTML5 Canvas in your browser.
+- **Graceful on restricted pages** — falls back to instant capture on `chrome://` and extension-store pages instead of failing.
 
-### 💻 How to Use
+---
 
-1.  Click the **Nhako Capture** icon in your toolbar.
-    
-2.  A sleek, blurred overlay will appear on the current page with two primary options:
-    
-    *   **Capture Visible Page:** Instantly snaps the screen and opens the Editor.
-        
-    *   **Crop Selection:** Turns your cursor into a crosshair. Click and drag to perfectly select a specific element on the page.
-        
-3.  The **Editor Window** will pop up instantly.
-    
-    *   Click **Copy to Clipboard** (or press Ctrl+C) to copy the image and auto-close the window.
-        
-    *   Click **Save Image** to download the PNG directly to your PC and auto-close the window.
-        
-    *   _Need to adjust?_ You can click and drag inside the Editor to crop the image a second time!
-        
+## Install (developer mode)
 
-### 🛠️ Architecture & Tech Stack
+Not on the Web Store — load it unpacked:
 
-*   **Framework:** Chrome Extensions API (Manifest V3)
-    
-*   **Languages:** Vanilla JavaScript (ES6+), HTML5, CSS3
-    
-*   **Core APIs Utilized:**
-    
-    *   chrome.tabs.captureVisibleTab
-        
-    *   chrome.scripting.executeScript (For dynamic content injection)
-        
-    *   chrome.windows.create (For the standalone UI popup)
-        
-    *   Navigator.clipboard API (For binary Blob copy/pasting)
-        
+1. Clone or download this repository.
+2. Open your browser's extensions page:
+   - Brave — `brave://extensions`
+   - Chrome — `chrome://extensions`
+   - Edge — `edge://extensions`
+3. Turn on **Developer mode**.
+4. Click **Load unpacked**.
+5. Select the **`scripts/` folder** inside this repository — not the repository root. `manifest.json` lives in `scripts/`, and Chromium requires the manifest to sit at the root of the folder you select.
+6. Pin the extension from the puzzle-piece menu for one-click access.
 
-### Future Updates
-- Quick Annotations
-    - [ ] arrow tool
-    - [ ] rectangle highlight
-    - [ ] blur tool
-- [ ] Full Page Screenshot
-- [x] Selection Crop
-- [x] Visible Screen
-- [ ] Zoom In/Out
-- [ ] add logo to extension
-- ***More Bug Fixes***
+---
 
-### 📝 License & Credits
+## Usage
 
-Created and maintained by **kimzam**. Built as a passion project to optimize personal workflows and restore the "Opera Feel" to the Brave Browser ecosystem.
+1. Click the **Nhako Capture** toolbar icon. An overlay appears with two options:
+   - **Capture Visible Page** — snaps the viewport and opens the editor.
+   - **Crop Selection** — turns the cursor into a crosshair; drag to select a region.
+2. In the editor window:
+   - **Copy to Clipboard** (or `Ctrl+C`) — copies the PNG and closes the editor.
+   - **Save Image** — downloads the PNG and closes the editor.
+   - Drag inside the image to crop again before doing either.
+
+---
+
+## How it works
+
+| Piece | File | Role |
+|---|---|---|
+| Service worker | `scripts/background.js` | Handles the toolbar action, captures the tab, opens the editor window |
+| Content script | `scripts/content.js` | Injects the overlay and the crosshair crop UI into the live page |
+| Editor | `scripts/editor.html`, `scripts/editor.js` | Canvas-based crop, clipboard write, and PNG download |
+| Manifest | `scripts/manifest.json` | Manifest V3 declaration and permissions |
+
+Built on `chrome.tabs.captureVisibleTab`, `chrome.scripting.executeScript`, `chrome.windows.create`, and the `navigator.clipboard` API for binary blob writes.
+
+---
+
+## Roadmap
+
+- [x] Visible-viewport capture
+- [x] Live selection crop
+- [ ] Full-page (scrolling) screenshot
+- [ ] Annotations — arrow, rectangle highlight, blur
+- [ ] Zoom in the editor
+- [ ] Extension icon artwork
+
+---
+
+Built by **kimzam** to restore the Opera capture feel on Brave.
