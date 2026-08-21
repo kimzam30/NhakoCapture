@@ -4,7 +4,7 @@
 
 # NhakoCapture
 
-**Opera's Snapshot tool, rebuilt for Brave.**
+**Snapshot tool, rebuilt for browser of your choice.**
 
 Freeze the page, frame a region, mark it up, copy. Without ever leaving the tab.
 
@@ -33,7 +33,7 @@ thing you are pointing at, and paste it into a chat. You never leave the tab and
 you never think about it.
 
 Brave has nothing equivalent, and the extensions that claim to fill the gap break
-the part that mattered — they throw you into a new tab, or make you save a file
+the part that mattered, they throw you into a new tab, or make you save a file
 and reopen it somewhere else to annotate, or want an account. The friction is not
 that screenshots are hard. It is that a two-second reflex becomes a twelve-second
 errand, and it interrupts the thought that prompted the screenshot.
