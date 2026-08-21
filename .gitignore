@@ -1,0 +1,17 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
+
+# Packaged builds
+*.zip
+*.crx
+*.pem
+dist/
+
+# Scratch
+*.log
