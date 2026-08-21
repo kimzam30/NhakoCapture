@@ -1,0 +1,200 @@
+/* ============================================================================
+   NhakoCapture — design tokens
+   Derived from: .design/opera-snapshot-parity/DESIGN_BRIEF.md
+   Philosophy:   Functional browser chrome (Swiss / utilitarian)
+
+   Two deviations from the standard token brief, both deliberate:
+
+   1. TOKENS ARE DECLARED ON :host, NOT :root.
+      The overlay lives in a shadow root injected into arbitrary pages. Custom
+      properties DO inherit through a shadow boundary, so anything defined on
+      the page's :root would leak in and a page defining --space-4 could shift
+      our layout. Declaring on :host shadows any inherited value. Every token is
+      also prefixed --nc- as a second line of defence.
+
+   2. THERE IS NO LIGHT MODE, AND THAT IS THE DESIGN.
+      This is browser chrome floating over a dimmed page, not a document. It is
+      dark in Opera, dark in macOS Screenshot, dark in Figma's overlays, and it
+      must stay legible over both a white article and a black video. Pinning it
+      dark is what makes it read as "the browser is doing something" rather than
+      as part of the page. A light variant would be actively worse, so there is
+      no prefers-color-scheme branch to get wrong.
+
+   The fallback editor (src/fallback/editor.html) is a normal extension page and
+   re-declares the same tokens on :root; it stays dark for consistency with the
+   overlay it stands in for.
+
+   Contrast ratios in comments are computed, not estimated.
+   ========================================================================== */
+
+:host,
+:root {
+  /* --- Accent ------------------------------------------------------------ */
+  /* Three accents, because one purple cannot do all three jobs accessibly.  */
+  --nc-accent:          #8a2be2;  /* filled surfaces; white on it = 5.96:1 AA */
+  --nc-accent-hover:    #9d4edd;  /* hover fill;      white on it = 4.60:1 AA */
+  --nc-accent-active:   #7a1fd0;  /* pressed fill                            */
+
+  /* Borders, focus rings and active-tool indicators on dark chrome MUST use
+     --nc-accent-bright. --nc-accent itself is 2.80:1 against --nc-surface and
+     fails WCAG 1.4.11's 3:1 floor for non-text UI. This is the single most
+     load-bearing token in the file. */
+  --nc-accent-bright:   #a862ea;  /* 4.45:1 on surface, 3.67:1 on raised     */
+
+  /* --- Surfaces ---------------------------------------------------------- */
+  --nc-surface:         #1e1e1e;  /* toolbars, rails                         */
+  --nc-surface-raised:  #2d2d2d;  /* controls sitting on a toolbar           */
+  --nc-surface-sunken:  #161616;  /* wells, pressed states                   */
+  --nc-surface-glass:   rgba(30, 30, 30, 0.92); /* toolbars over live pixels */
+
+  /* --- Text -------------------------------------------------------------- */
+  --nc-text:            #f2f2f2;                    /* 14.89:1 AAA           */
+  --nc-text-muted:      rgba(255, 255, 255, 0.62);  /*  7.18:1 AAA           */
+  --nc-text-faint:      rgba(255, 255, 255, 0.38);  /*  3.57:1 — NOT for
+                                                       live copy. Disabled
+                                                       states and dividers
+                                                       only.                 */
+  --nc-text-on-accent:  #ffffff;
+
+  /* --- Borders ----------------------------------------------------------- */
+  --nc-border:          rgba(255, 255, 255, 0.10);
+  --nc-border-strong:   rgba(255, 255, 255, 0.18);
+  --nc-border-focus:    var(--nc-accent-bright);
+
+  /* --- Status ------------------------------------------------------------ */
+  --nc-success:         #34c759;
+  --nc-warning:         #ffcc00;
+  --nc-error:           #ff453a;
+
+  /* --- Capture surface --------------------------------------------------- */
+  /* The scrim dims everything OUTSIDE the selection. 0.45 not v1's 0.6: the
+     page must stay readable enough to line up a shot against. v1 also applied
+     backdrop-filter: blur(3px), which is removed — you cannot aim at content
+     you cannot resolve. */
+  --nc-scrim:           rgba(0, 0, 0, 0.45);
+
+  /* Marquee is a double stroke because it sits over arbitrary page content
+     where no single colour can guarantee contrast: white outer, purple inner. */
+  --nc-marquee-outer:   rgba(255, 255, 255, 0.95);
+  --nc-marquee-inner:   var(--nc-accent-bright);
+  --nc-marquee-width:   2px;
+
+  --nc-handle-size:     10px;   /* constant SCREEN px, never scaled by DPR   */
+  --nc-handle-hit:      20px;   /* invisible hit area — Fitts, not cosmetics */
+  --nc-handle-fill:     #ffffff;
+  --nc-handle-border:   var(--nc-accent-bright);
+
+  /* --- Annotation inks --------------------------------------------------- */
+  /* Red default, not brand purple: red is the convention for "look here" and
+     stays legible on the purple-free majority of the web. */
+  --nc-ink-default:     #ff3b30;
+  --nc-ink-red:         #ff3b30;
+  --nc-ink-amber:       #ffcc00;
+  --nc-ink-green:       #34c759;
+  --nc-ink-blue:        #0a84ff;
+  --nc-ink-purple:      #8a2be2;
+  --nc-ink-white:       #ffffff;
+  --nc-ink-black:       #1c1c1e;
+
+  --nc-highlight-alpha: 0.45;   /* marker ink, composited with multiply      */
+  --nc-blur-radius:     8px;    /* ctx.filter blur for redaction             */
+  --nc-stroke-thin:     2px;
+  --nc-stroke-medium:   4px;
+  --nc-stroke-thick:    8px;
+
+  /* --- Spacing ----------------------------------------------------------- */
+  /* 4px base. Dense utilitarian chrome, not an editorial layout. */
+  --nc-space-0:  0;
+  --nc-space-1:  2px;
+  --nc-space-2:  4px;
+  --nc-space-3:  6px;
+  --nc-space-4:  8px;
+  --nc-space-5:  12px;
+  --nc-space-6:  16px;
+  --nc-space-7:  24px;
+  --nc-space-8:  32px;
+  --nc-space-9:  48px;
+
+  /* --- Typography -------------------------------------------------------- */
+  /* System stack only. A content script cannot rely on loading a webfont under
+     an arbitrary page's CSP, and fetching one would break the no-network
+     promise the README makes. */
+  --nc-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+             "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --nc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas,
+                  "Liberation Mono", monospace;
+
+  --nc-text-xs:   11px;   /* badge, swatch labels    */
+  --nc-text-sm:   12px;   /* rail labels             */
+  --nc-text-base: 13px;   /* buttons, hint text      */
+  --nc-text-md:   14px;
+  --nc-text-lg:   16px;   /* annotation text tool sm */
+  --nc-text-xl:   20px;   /* annotation text tool md */
+  --nc-text-2xl:  28px;   /* annotation text tool lg */
+
+  --nc-weight-normal:   400;
+  --nc-weight-medium:   500;
+  --nc-weight-semibold: 600;
+
+  --nc-leading-tight:  1.2;
+  --nc-leading-normal: 1.45;
+
+  --nc-tracking-normal: 0;
+  --nc-tracking-wide:   0.02em;  /* small caps labels */
+
+  /* --- Radius & elevation ------------------------------------------------ */
+  --nc-radius-sm:   4px;
+  --nc-radius-md:   6px;
+  --nc-radius-lg:   10px;
+  --nc-radius-pill: 999px;
+
+  --nc-shadow-toolbar: 0 6px 24px rgba(0, 0, 0, 0.40),
+                       0 1px 2px  rgba(0, 0, 0, 0.30);
+  --nc-shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.50);
+  /* Two-stop ring so focus is visible against both the toolbar and the page */
+  --nc-shadow-focus:   0 0 0 2px var(--nc-surface),
+                       0 0 0 4px var(--nc-accent-bright);
+
+  /* --- Motion ------------------------------------------------------------ */
+  /* Fast. The tool's whole value is that it does not make you wait. */
+  --nc-duration-instant: 60ms;
+  --nc-duration-fast:    120ms;
+  --nc-duration-normal:  180ms;
+
+  --nc-ease:     cubic-bezier(0.4, 0, 0.2, 1);
+  --nc-ease-out: cubic-bezier(0, 0, 0.2, 1);
+
+  /* --- Layering ---------------------------------------------------------- */
+  /* The host takes max z-index; everything else layers inside the shadow root,
+     where the page cannot reach. */
+  --nc-z-host:      2147483647;
+  --nc-z-backdrop:  1;
+  --nc-z-scrim:     2;
+  --nc-z-marquee:   3;
+  --nc-z-handles:   4;
+  --nc-z-toolbar:   5;
+  --nc-z-popover:   6;
+  --nc-z-toast:     7;
+}
+
+/* Nothing in this UI needs animation to be understood. */
+@media (prefers-reduced-motion: reduce) {
+  :host,
+  :root {
+    --nc-duration-instant: 0ms;
+    --nc-duration-fast:    0ms;
+    --nc-duration-normal:  0ms;
+  }
+}
+
+/* Windows High Contrast / forced-colors: stop painting our own colours and let
+   the OS palette through, or the overlay becomes an unreadable grey slab. */
+@media (forced-colors: active) {
+  :host,
+  :root {
+    --nc-marquee-inner: Highlight;
+    --nc-accent-bright: Highlight;
+    --nc-text:          CanvasText;
+    --nc-surface:       Canvas;
+  }
+}
