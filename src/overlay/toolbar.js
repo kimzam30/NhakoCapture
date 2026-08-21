@@ -59,6 +59,11 @@
 
     const hint = document.createElement('span');
     hint.className = 'nc-hint';
+    /* Also the status channel: "Copied!", "Save failed" and the degraded-copy
+     * notice all land here, and the window closes right after, so a
+     * screen-reader user has to be told rather than shown. */
+    hint.setAttribute('role', 'status');
+    hint.setAttribute('aria-live', 'polite');
     hint.textContent = 'Drag to select an area';
     pill.appendChild(hint);
 

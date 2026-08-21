@@ -303,6 +303,17 @@
       }
     }
 
+    /* Focus trap. The page underneath is still focusable, and tabbing into it
+     * from a modal overlay leaves a keyboard user driving a page they cannot
+     * see, with no way back. Pull focus home whenever it escapes the host. */
+    cleanup.listen(document, 'focusin', (event) => {
+      if (!session) return;
+      if (event.target === stage.host || stage.host.contains(event.target)) return;
+      // composedPath sees through the shadow boundary; contains() does not.
+      if (event.composedPath?.().includes(stage.host)) return;
+      stage.root.focus({ preventScroll: true });
+    }, true);
+
     stage.root.focus({ preventScroll: true });
 
     return { metrics };

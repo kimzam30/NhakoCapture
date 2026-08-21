@@ -499,6 +499,122 @@ async function main() {
     check('hint text collapses below 640px', labelsHidden.hint === 'none');
     await shoot(cdp, '04-narrow');
 
+    /* --- T18: edge cases ---------------------------------------------------- */
+    await key(cdp, 'Escape'); await key(cdp, 'Escape');
+    await mountOverlay(cdp);
+    {
+      const W0 = await cdp.eval('innerWidth'), H0 = await cdp.eval('innerHeight');
+      const edges = {
+        'top-left':     [[0, 0], [200, 150]],
+        'top-right':    [[W0, 0], [W0 - 200, 150]],
+        'bottom-left':  [[0, H0], [200, H0 - 150]],
+        'bottom-right': [[W0, H0], [W0 - 200, H0 - 150]],
+      };
+      for (const [name, [from, to]] of Object.entries(edges)) {
+        await drag(cdp, from, to);
+        await sleep(150);
+        const r = JSON.parse(await rectOf(cdp));
+        check(`frame flush to the ${name} corner stays in bounds`,
+          r && r.x >= 0 && r.y >= 0 && r.x + r.w <= W0 && r.y + r.h <= H0,
+          JSON.stringify(r));
+        const chrome = await cdp.eval(`(() => {
+          const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          const rail = sr.querySelector('.nc-rail').getBoundingClientRect();
+          const badge = sr.querySelector('.nc-badge').getBoundingClientRect();
+          return { rail: rail.top >= 0 && rail.left >= 0 && rail.right <= innerWidth && rail.bottom <= innerHeight,
+                   badge: badge.top >= 0 && badge.left >= 0 && badge.right <= innerWidth };
+        })()`);
+        check(`  ...and its rail and badge stay on screen (${name})`,
+          chrome.rail && chrome.badge, JSON.stringify(chrome));
+      }
+    }
+
+    /* --- T19: accessibility --------------------------------------------------- */
+    await key(cdp, 'Escape'); await key(cdp, 'Escape');
+    await mountOverlay(cdp);
+    await drag(cdp, [300, 220], [820, 520]);
+    await sleep(200);
+    {
+      const a11y = await cdp.eval(`(() => {
+        const h = document.getElementById('nhako-capture-host');
+        const sr = h.shadowRoot;
+        const named = (sel) => [...sr.querySelectorAll(sel)]
+          .every(b => (b.getAttribute('aria-label') || b.textContent || '').trim().length > 0);
+        return {
+          appRole: sr.querySelector('.nc-root').getAttribute('role'),
+          appLabel: !!sr.querySelector('.nc-root').getAttribute('aria-label'),
+          pillRole: sr.querySelector('.nc-pill').getAttribute('role'),
+          railRole: sr.querySelector('.nc-rail').getAttribute('role'),
+          hintLive: sr.querySelector('.nc-hint').getAttribute('aria-live'),
+          badgeLive: sr.querySelector('.nc-badge').getAttribute('aria-live'),
+          buttonsNamed: named('.nc-btn') && named('.nc-tool') && named('.nc-swatch') && named('.nc-weight'),
+          focusInside: sr.contains(document.activeElement) || document.activeElement === h,
+        };
+      })()`);
+      check('the overlay declares itself an application region', a11y.appRole === 'application' && a11y.appLabel);
+      check('pill and rail are toolbars', a11y.pillRole === 'toolbar' && a11y.railRole === 'toolbar');
+      check('the status hint is a live region', a11y.hintLive === 'polite');
+      check('the dimension badge is a live region', a11y.badgeLive === 'polite');
+      check('every control has an accessible name', a11y.buttonsNamed);
+      check('focus starts inside the overlay', a11y.focusInside);
+
+      /* focus trap: focusing something in the page must bounce back */
+      const trapped = await cdp.eval(`(async () => {
+        const link = document.createElement('button');
+        link.textContent = 'page control';
+        document.body.appendChild(link);
+        link.focus();
+        await new Promise(r => setTimeout(r, 120));
+        const escaped = document.activeElement === link;
+        link.remove();
+        return !escaped;
+      })()`);
+      check('focus cannot escape into the page underneath', trapped);
+
+      /* reduced motion collapses the durations */
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+      await sleep(200);
+      const motion = await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const cs = getComputedStyle(sr.querySelector('.nc-btn'));
+        return { dur: getComputedStyle(sr.host).getPropertyValue('--nc-duration-fast').trim(),
+                 transition: cs.transitionDuration };
+      })()`);
+      check('prefers-reduced-motion collapses transitions',
+        motion.dur === '0ms' && /^0s(, 0s)*$/.test(motion.transition), JSON.stringify(motion));
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+      await sleep(150);
+
+    }
+
+    /* Focus restoration, tested end to end: it can only be checked with the
+     * overlay down, because while it is up the trap (correctly) refuses to let
+     * anything in the page take focus. */
+    await key(cdp, 'Escape'); await key(cdp, 'Escape');
+    await sleep(200);
+    {
+      const before = await cdp.eval(`(() => {
+        const b = document.createElement('button');
+        b.id = 'prev-focus';
+        b.textContent = 'page control';
+        document.body.appendChild(b);
+        b.focus();
+        return document.activeElement.id;
+      })()`);
+      check('a page control holds focus before launch', before === 'prev-focus', before);
+
+      await mountOverlay(cdp);
+      const during = await cdp.eval(`document.activeElement.id || document.activeElement.tagName`);
+      check('launching moves focus into the overlay', during !== 'prev-focus', during);
+
+      await key(cdp, 'Escape'); await key(cdp, 'Escape');
+      await sleep(250);
+      const after = await cdp.eval(`document.activeElement.id`);
+      check('dismissing returns focus exactly where it was', after === 'prev-focus', after);
+      await cdp.eval(`document.getElementById('prev-focus')?.remove()`);
+    }
+
     /* --- fallback editor window -------------------------------------------
      * The brave:// path. Loaded from file:// with chrome.storage, runtime and
      * fetch shimmed, so the same modules can be exercised outside an installed

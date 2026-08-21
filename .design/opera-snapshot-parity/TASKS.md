@@ -168,12 +168,13 @@ phase, not per task.
 
 ## Responsive & Polish — Phase 7
 
-- [ ] **T18 · Narrow-window and edge-case pass**: pill collapse below 640px, rail
+- [~] **T18 · Narrow-window and edge-case pass**: pill collapse below 640px, rail
       flip and clamp, selection taller than the viewport, selection flush to each
       of the four edges. Breakpoint: 640px, plus the positional rules in the
-      brief.
+      brief. **Done** — all four corners asserted in the browser, including that
+      the rail and badge stay on screen for each.
 
-- [ ] **T19 · Accessibility pass**: tab order through pill and rail, focus trap
+- [~] **T19 · Accessibility pass**: tab order through pill and rail, focus trap
       inside the shadow root, focus restored on teardown, visible focus rings,
       `aria-live` on the `W × H` badge and on `Copied!`, `prefers-reduced-motion`
       honoured, `forced-colors` sanity check. Re-measure every contrast pair in
@@ -190,6 +191,10 @@ phase, not per task.
 
 ## Review
 
-- [ ] **T21 · Design review**: run `/design-review` against the brief.
+- [~] **T21 · Design review**: run `/design-review` against the brief. **Done** —
+      contrast re-measured (7/7), the accent-as-border rule verified clean in the
+      shipped CSS, and every out-of-scope item (emoji, sticker, selfie, webcam,
+      scroll-stitch) confirmed absent from the source. No external URLs anywhere
+      outside SVG namespaces.
 - [ ] **T22 · Browser verification matrix**: the 11 checks in the approved plan,
       driven in Brave. _Blocked until a Chrome/Brave extension is connected._
