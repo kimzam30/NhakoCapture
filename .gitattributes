@@ -1,0 +1,13 @@
+# Normalise all text to LF in the repository.
+# Without this the tree drifts to CRLF and every diff reports the whole file
+# as changed (538 insertions / 538 deletions with zero content difference).
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.woff  binary
+*.woff2 binary
