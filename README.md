@@ -58,7 +58,8 @@ NhakoCapture rebuilds that reflex.
 Not on the Web Store. Load it unpacked:
 
 1. Clone this repository.
-2. Open `brave://extensions` (or `chrome://extensions`).
+2. Open your browser's extensions page — `brave://extensions`,
+   `chrome://extensions` or `edge://extensions`.
 3. Turn on **Developer mode**, top right.
 4. Click **Load unpacked** and select the **repository root** — the folder
    containing `manifest.json`.

@@ -5,6 +5,13 @@
 - [ ] Zoom In/Out
 - [ ] add logo to extension
 
+## Future Plans
+- Quick Annotations
+    - [ ] arrow tool
+    - [ ] rectangle highlight
+    - [ ] blur tool
+
+
 ### For Full Page Screenshot
 **Scroll Stitch strategy**
 - [ ] Content Script - Determines total page height, hides sticky elements, disables scrollbars, and manages the ```windows.scrollTo``` loop.
@@ -13,3 +20,7 @@
 
 ## Bug Fixes
 - [ ] Save Button after ss, no popup for destination
+- [ ] Storage limit silently fail
+- [ ] Improve crop math functionality
+- [ ] Injecting ```ShadowRoot```
+- [ ] Fix memory leaks
