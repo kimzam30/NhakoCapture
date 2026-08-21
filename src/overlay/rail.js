@@ -153,7 +153,7 @@
     }
 
     /* Keep the rail off the thing being annotated. */
-    function position(rect) {
+    function position(rect, reservedTop = 0) {
       if (!rect) { rail.hidden = true; return; }
       rail.hidden = false;
       rail.classList.remove('is-overlaid');
@@ -165,7 +165,9 @@
 
       let top;
       if (below + box.height <= view.height) top = below;
-      else if (above >= 0) top = above;
+      /* `reservedTop` is the bottom of the command pill. Without it a tall
+       * frame pushes the rail up into the pill and the two overlap. */
+      else if (above >= reservedTop) top = above;
       else {
         // Frame is taller than the viewport allows: sit on its bottom edge,
         // dimmed until pointed at, rather than shoved offscreen.

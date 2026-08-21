@@ -121,7 +121,7 @@
         toolbar.avoid(rect);
         toolbar.setHint(hintFor(mode));
         annotate.paint();
-        rail.position(mode === 'adjusting' ? rect : null);
+        rail.position(mode === 'adjusting' ? rect : null, toolbar.bottom());
         rail.sync();
         if (!rect) {
           // Frame gone: the marks belonged to it.
@@ -163,8 +163,7 @@
       layer: stage.layer,
       actions: {
         captureFullScreen: () => selection.selectAll(),
-        /* savePdf is deliberately absent until Phase 5 builds it -- the pill
-         * renders only the actions that exist. */
+        savePdf: () => savePdf(),
         cancel: () => destroy(),
       },
     });
@@ -290,6 +289,19 @@
       console.error('[NhakoCapture]', action, 'failed:', res?.error);
     }
     session.finish = finish;
+
+    /* The overlay has to be gone before the PDF is rendered -- printToPDF
+     * rasterises the live DOM, and our scrim and toolbars are part of it. Tear
+     * down first, then ask; the message still lands, because the content
+     * script's world outlives the overlay it mounted. */
+    async function savePdf() {
+      destroy();
+      try {
+        await chrome.runtime.sendMessage({ type: 'nc:pdf' });
+      } catch (err) {
+        console.error('[NhakoCapture] PDF request failed:', err);
+      }
+    }
 
     stage.root.focus({ preventScroll: true });
 

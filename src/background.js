@@ -240,6 +240,83 @@ async function saveImage(dataUrl, filename) {
   }
 }
 
+/* --- full page as PDF -----------------------------------------------------
+ *
+ * Opera's "Save page as PDF". Chromium exposes Page.printToPDF only through the
+ * DevTools protocol, so this attaches the debugger for the second or so the
+ * render takes and detaches immediately. That surfaces Chromium's "started
+ * debugging this browser" infobar for the duration -- accepted knowingly as the
+ * price of true parity, and the reason detach is in a finally block.
+ *
+ * Attach fails when DevTools is already open on the tab, so there is a second
+ * route: window.print(), which lands the user in Brave's own print preview with
+ * "Save as PDF" preselected. Two clicks instead of one, no banner.
+ */
+async function pdfViaDebugger(tabId) {
+  const target = { tabId };
+  await chrome.debugger.attach(target, '1.3');
+  try {
+    await chrome.debugger.sendCommand(target, 'Page.enable');
+    const result = await chrome.debugger.sendCommand(target, 'Page.printToPDF', {
+      printBackground: true,
+      transferMode: 'ReturnAsBase64',
+    });
+    if (!result?.data) throw new Error('printToPDF returned no data');
+    return result.data;
+  } finally {
+    // Detach even on failure: a stranded attachment leaves the infobar up for
+    // the life of the tab.
+    try { await chrome.debugger.detach(target); } catch { /* already gone */ }
+  }
+}
+
+async function pdfViaPrintDialog(tabId) {
+  await chrome.scripting.executeScript({
+    target: { tabId },
+    func: () => window.print(),
+  });
+}
+
+function timestampedPdfName() {
+  return timestampedName().replace(/\.png$/, '.pdf');
+}
+
+async function savePdf(tabId) {
+  let base64;
+  try {
+    base64 = await pdfViaDebugger(tabId);
+  } catch (err) {
+    console.warn('[NhakoCapture] debugger route unavailable, falling back:', err);
+    try {
+      await pdfViaPrintDialog(tabId);
+      return { ok: true, via: 'print-dialog' };
+    } catch (fallbackErr) {
+      await reportFailure(tabId, 'could not produce a PDF', String(fallbackErr));
+      return { ok: false, error: String(fallbackErr) };
+    }
+  }
+
+  const made = await askOffscreen('make-blob-url', {
+    dataUrl: `data:application/pdf;base64,${base64}`,
+  });
+  if (!made?.ok) return made ?? { ok: false, error: 'offscreen did not respond' };
+
+  try {
+    const id = await chrome.downloads.download({
+      url: made.url,
+      filename: timestampedPdfName(),
+      saveAs: true,
+    });
+    pendingDownloads.set(id, made.url);
+    return { ok: true, via: 'debugger', downloadId: id };
+  } catch (err) {
+    chrome.runtime
+      .sendMessage({ target: OFFSCREEN_TARGET, op: 'revoke-blob-url', url: made.url })
+      .catch(() => {});
+    return { ok: false, error: String(err), cancelled: /USER_CANCELED/i.test(String(err)) };
+  }
+}
+
 /* --- message routing ----------------------------------------------------- */
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
@@ -256,6 +333,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     case 'nc:save':
       saveImage(msg.dataUrl, msg.filename).then(sendResponse, (err) =>
+        sendResponse({ ok: false, error: String(err) })
+      );
+      return true;
+
+    case 'nc:pdf':
+      savePdf(sender.tab?.id).then(sendResponse, (err) =>
         sendResponse({ ok: false, error: String(err) })
       );
       return true;

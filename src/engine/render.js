@@ -113,7 +113,9 @@
     /* A dark halo so the text survives landing on dark content. Cheaper and
      * more legible than a background plate, and it never covers the pixels the
      * annotation is pointing at. */
-    ctx.lineWidth = Math.max(2, op.size / 6);
+    /* Enough to carry the glyph over dark content, not so much that the text
+     * reads as an outline drawing. */
+    ctx.lineWidth = Math.max(1.5, op.size / 10);
     ctx.strokeStyle = 'rgba(0,0,0,0.55)';
     ctx.lineJoin = 'round';
     ctx.strokeText(op.text, op.at[0], op.at[1]);

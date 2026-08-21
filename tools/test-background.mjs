@@ -25,7 +25,8 @@ function eq(label, actual, expected) {
 }
 function ok(label, cond) { eq(label, !!cond, true); }
 
-function loadBackground({ captureFails = false, injectFails = false, cssFails = false } = {}) {
+function loadBackground({ captureFails = false, injectFails = false, cssFails = false,
+                         attachFails = false, printFails = false } = {}) {
   const calls = [];
   const listeners = {};
   const record = (name) => (...args) => { calls.push({ name, args }); };
@@ -60,6 +61,21 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     },
     offscreen: {
       createDocument: async (...a) => { calls.push({ name: 'createDocument', args: a }); },
+    },
+    debugger: {
+      attach: async (...a) => {
+        calls.push({ name: 'debugger.attach', args: a });
+        if (attachFails) throw new Error('another debugger is already attached');
+      },
+      detach: async (...a) => { calls.push({ name: 'debugger.detach', args: a }); },
+      sendCommand: async (target, method, params) => {
+        calls.push({ name: `debugger.${method}`, args: [target, params] });
+        if (method === 'Page.printToPDF') {
+          if (printFails) throw new Error('printToPDF failed');
+          return { data: 'JVBERi0xLjQK' };
+        }
+        return {};
+      },
     },
     downloads: {
       onChanged: { addListener: (fn) => { listeners.download = fn; } },
@@ -230,6 +246,53 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('download was requested', !!dl);
   eq('destination picker is opened', dl.args[0].saveAs, true);
   ok('filename is timestamped .png', /^Nhako_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.png$/.test(dl.args[0].filename));
+}
+
+/* --- PDF: the debugger route ---------------------------------------------- */
+{
+  const { listeners, calls, names } = loadBackground();
+  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
+
+  const seq = names();
+  ok('debugger attached', seq.includes('debugger.attach'));
+  ok('Page.enable before printing', seq.indexOf('debugger.Page.enable') < seq.indexOf('debugger.Page.printToPDF'));
+  ok('printToPDF called', seq.includes('debugger.Page.printToPDF'));
+  ok('debugger detached', seq.includes('debugger.detach'));
+  ok('detach happens after printing',
+    seq.lastIndexOf('debugger.detach') > seq.indexOf('debugger.Page.printToPDF'));
+
+  const print = calls.find((c) => c.name === 'debugger.Page.printToPDF');
+  eq('backgrounds are printed', print.args[1].printBackground, true);
+
+  const dl = calls.find((c) => c.name === 'downloads.download');
+  ok('a download was requested', !!dl);
+  eq('destination picker is opened', dl.args[0].saveAs, true);
+  ok('saved as .pdf', /^Nhako_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.pdf$/.test(dl.args[0].filename));
+  ok('never falls back to the print dialog when the debugger works',
+    !seq.includes('executeScript'));
+}
+
+/* --- PDF: attach refused (DevTools already open) -------------------------- */
+{
+  const { listeners, calls, names } = loadBackground({ attachFails: true });
+  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
+  const seq = names();
+  ok('attach was attempted', seq.includes('debugger.attach'));
+  ok('falls back to the print dialog', seq.includes('executeScript'));
+  ok('no download is forced on the fallback path', !seq.includes('downloads.download'));
+  const inject = calls.find((c) => c.name === 'executeScript');
+  ok('the fallback injects a print call', /print/.test(String(inject.args[0].func)));
+}
+
+/* --- PDF: printing fails after a successful attach ------------------------
+ * The detach MUST still happen. A stranded attachment leaves Chromium's
+ * "started debugging this browser" infobar up for the life of the tab.        */
+{
+  const { listeners, names } = loadBackground({ printFails: true });
+  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
+  const seq = names();
+  ok('detached even though printing threw', seq.includes('debugger.detach'));
+  ok('and still falls back to the print dialog', seq.includes('executeScript'));
 }
 
 /* --- offscreen-addressed messages are ignored by the background ---------- */

@@ -101,6 +101,8 @@
     return {
       element: pill,
       setHint(text) { hint.textContent = text; },
+      /* Bottom edge in viewport CSS px, so the rail can keep clear of it. */
+      bottom() { return pill.getBoundingClientRect().bottom + 8; },
       hide() { pill.style.display = 'none'; },
       show() { pill.style.display = ''; },
       /* Keeps the pill out of the way when a selection is drawn underneath it. */

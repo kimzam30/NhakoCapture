@@ -23,7 +23,9 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = process.argv[2] || join(ROOT, 'preview');
+const ARGS = process.argv.slice(2);
+const HERO = ARGS.includes('--hero');
+const OUT = ARGS.find((a) => !a.startsWith('--')) || join(ROOT, 'preview');
 const W = 1280, H = 800;
 
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
@@ -248,8 +250,8 @@ async function main() {
     check('stylesheet adopted', mounted.sheets === 1);
     check('four scrim rects', mounted.scrims === 4, `got ${mounted.scrims}`);
     check('command pill rendered', mounted.pill);
-    check('the PDF button is absent until Phase 5 builds it',
-      !(await cdp.eval(`[...document.getElementById('nhako-capture-host').shadowRoot.querySelectorAll('.nc-btn')].some(b => /PDF/.test(b.textContent))`)));
+    check('the pill offers Save page as PDF',
+      await cdp.eval(`[...document.getElementById('nhako-capture-host').shadowRoot.querySelectorAll('.nc-btn')].some(b => /PDF/.test(b.textContent))`));
     await shoot(cdp, '01-idle');
 
     /* --- real drag through the real pointer path ------------------------- */
@@ -445,6 +447,28 @@ async function main() {
     await drag(cdp, [260, 200], [900, 560]);
     await sleep(200);
 
+    /* the rail must never collide with the command pill */
+    await mountOverlay(cdp);
+    await drag(cdp, [64, 96], [1216, 620]);   // tall frame: no room below
+    await sleep(300);
+    const overlap = await cdp.eval(`(() => {
+      const sr = document.getElementById('nhako-capture-host').shadowRoot;
+      const p = sr.querySelector('.nc-pill').getBoundingClientRect();
+      const r = sr.querySelector('.nc-rail').getBoundingClientRect();
+      const vertical = Math.min(p.bottom, r.bottom) - Math.max(p.top, r.top);
+      const horizontal = Math.min(p.right, r.right) - Math.max(p.left, r.left);
+      return { vertical, horizontal, railTop: r.top, pillBottom: p.bottom };
+    })()`);
+    check('a tall frame does not push the rail into the pill',
+      overlap.vertical <= 0 || overlap.horizontal <= 0, JSON.stringify(overlap));
+    check('the rail stays inside the viewport',
+      await cdp.eval(`(() => { const r = document.getElementById('nhako-capture-host').shadowRoot.querySelector('.nc-rail').getBoundingClientRect(); return r.top >= 0 && r.left >= 0 && r.right <= innerWidth && r.bottom <= innerHeight; })()`));
+
+    /* restore a normal frame */
+    await mountOverlay(cdp);
+    await drag(cdp, [260, 200], [900, 560]);
+    await sleep(200);
+
     /* zoom loupe */
     await pickTool(cdp, 'Zoom');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 380 });
@@ -475,12 +499,53 @@ async function main() {
     check('hint text collapses below 640px', labelsHidden.hint === 'none');
     await shoot(cdp, '04-narrow');
 
+    /* --- README hero -------------------------------------------------------
+     * Opt-in, because it writes into the repo rather than the scratch dir. The
+     * README shows the actual product, rendered by the actual code -- not a
+     * mockup that quietly stops being true.
+     */
+    if (HERO) {
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await sleep(300);
+      await cdp.send('Page.navigate', { url: PAGE });
+      await sleep(1200);
+      await mountOverlay(cdp);
+      // Sized to leave room for the rail below it at full opacity -- a dimmed
+      // is-overlaid rail is correct behaviour but a poor product shot.
+      await drag(cdp, [56, 128], [1224, 516]);
+      await sleep(200);
+
+      await pickTool(cdp, 'Highlight');
+      await drag(cdp, [33, 176], [680, 176]);
+      await sleep(120);
+      await pickTool(cdp, 'Arrow');
+      await drag(cdp, [980, 400], [1140, 300]);
+      await sleep(120);
+      await pickTool(cdp, 'Blur');
+      await drag(cdp, [877, 438], [1216, 484]);
+      await sleep(200);
+      await pickTool(cdp, 'Text');
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 880, y: 330, button: 'left', buttons: 1, clickCount: 1 });
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 880, y: 330, button: 'left', buttons: 1, clickCount: 1 });
+      await sleep(250);
+      await cdp.send('Input.insertText', { text: 'ship this' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+      await sleep(300);
+      await pickTool(cdp, 'Pencil');
+
+      mkdirSync(join(ROOT, 'docs'), { recursive: true });
+      const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      writeFileSync(join(ROOT, 'docs/screenshot.png'), Buffer.from(data, 'base64'));
+      console.log('wrote docs/screenshot.png');
+    }
+
     console.log(`\npreview: ${pass} checks passed, ${failures.length} failed`);
     if (failures.length) { for (const f of failures) console.error('  FAIL ' + f); process.exitCode = 1; }
   } finally {
     try { cdp?.close(); } catch {}
     child.kill('SIGKILL');
-    rmSync(profile, { recursive: true, force: true });
+    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
 }
 
