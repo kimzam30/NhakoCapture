@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NhakoCapture",
   "version": "2.0.0",
-  "description": "Opera's Snapshot tool, for Brave. Freeze the page, frame a region, annotate, then copy or save.",
+  "description": "Snapshot tool. Freeze the page, frame a region, annotate, then copy or save.",
   "permissions": [
     "activeTab",
     "storage",

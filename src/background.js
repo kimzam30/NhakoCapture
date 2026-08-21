@@ -20,8 +20,33 @@ const OFFSCREEN_PATH = 'src/offscreen.html';
 const OVERLAY_FILES = [
   'src/lib/namespace.js',
   'src/lib/geometry.js',
+  'src/overlay/stage.js',
+  'src/overlay/selection.js',
+  'src/overlay/toolbar.js',
   'src/overlay/inject.js',
 ];
+
+/* Read here and passed to the overlay in the handoff, rather than fetched by
+ * the content script. A service worker can always read its own resources, which
+ * keeps these files out of web_accessible_resources and means the host page's
+ * CSP never enters into it. tokens.css must come first -- overlay.css consumes
+ * the custom properties it declares. */
+const STYLE_FILES = ['src/overlay/tokens.css', 'src/overlay/overlay.css'];
+
+let styleCache = null;
+
+async function overlayStyles() {
+  if (styleCache !== null) return styleCache;
+  const parts = await Promise.all(
+    STYLE_FILES.map(async (path) => {
+      const res = await fetch(chrome.runtime.getURL(path));
+      if (!res.ok) throw new Error(`${path}: ${res.status}`);
+      return res.text();
+    })
+  );
+  styleCache = parts.join('\n');
+  return styleCache;
+}
 
 /* Pages where content scripts cannot run at all. Checking up front lets us give
  * a real reason instead of surfacing an opaque injection error. */
@@ -101,8 +126,16 @@ async function launch(tab) {
     return;
   }
 
+  let cssText;
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl });
+    cssText = await overlayStyles();
+  } catch (err) {
+    await reportFailure(tab.id, 'overlay styles failed to load', String(err));
+    return;
+  }
+
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText });
   } catch (err) {
     await reportFailure(tab.id, 'the overlay did not respond', String(err));
   }

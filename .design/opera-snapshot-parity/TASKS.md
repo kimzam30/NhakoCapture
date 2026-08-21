@@ -56,30 +56,40 @@ phase, not per task.
 
 ## Core UI — Phase 3
 
-- [ ] **T4 · Shadow host, frozen backdrop, scrim** _(sets the aesthetic)_: mount
+- [~] **T4 · Shadow host, frozen backdrop, scrim** _(sets the aesthetic)_: mount
       the shadow root (`all: initial`, `--nc-z-host`), inline `TOKENS.css` plus
       `overlay.css` into it, paint the bitmap 1:1, lay `--nc-scrim` over it, lock
       scroll. Done when invoking on a page with a CSS animation visibly freezes
       it and the page's own stylesheet demonstrably cannot alter our UI. _New.
       First use of the token file — judge the visual direction here._
+      **Built and rendered.** `tools/preview.mjs` drives real Chromium over CDP
+      and asserts the scrim geometry pixel by pixel: inside the frame is
+      byte-identical to the original page, outside is exactly 45% dimmed to the
+      last row.
 
-- [ ] **T5 · Selection frame, handles, dimension badge** _(risk-first maths)_:
+- [~] **T5 · Selection frame, handles, dimension badge** _(risk-first maths)_:
       drag to draw, 8 handles, draggable interior, arrow-key nudge (1px, 10px
       with Shift), live `W × H` badge in tabular numerals, double-stroke marquee,
       selection reads through undimmed. Done when a selection over a known
       element produces exact `selection × dpr` pixel bounds on a HiDPI display.
       _Modifies v1's border-only box, which had no handles and no reposition._
+      **Built.** A real dispatched drag produces the exact frame; 28 unit tests
+      cover clamping, handle flipping, keyboard nudge and the misclick
+      threshold. HiDPI is proven by unit test, not yet on real hardware.
 
-- [ ] **T6 · Command pill**: top-centre pill — hint text, `Capture full screen`,
+- [~] **T6 · Command pill**: top-centre pill — hint text, `Capture full screen`,
       `Save page as PDF`, dismiss. Collapses to icons below 640px. Done when all
       three actions fire and the pill never overlaps a selection near the top.
       _Modifies v1's `btnContainer`; reuses its inline-SVG `currentColor` icon
       approach._
 
-- [ ] **T7 · Teardown and Escape**: single `destroy()` that removes every
+- [~] **T7 · Teardown and Escape**: single `destroy()` that removes every
       listener, restores scroll and focus, and unmounts. `Escape` steps back one
       level (annotating → framing → exit). Done when invoking and dismissing ten
-      times leaves no accumulated listeners and no console error. _Fixes the
+      times leaves no accumulated listeners and no console error.
+      **Built and verified in a real engine** — Escape clears the frame, a second
+      Escape tears down, scroll lock is released, and three consecutive launches
+      leave exactly one host. _Fixes the
       `ReferenceError` at `src/overlay/inject.js:142-147`, where the handler
       references block-scoped `overlay`/`selectionBox` from outside their block,
       and the leaked listener per injection that sits beside it._

@@ -1,0 +1,241 @@
+/* NhakoCapture — overlay UI
+ *
+ * Adopted into the shadow root alongside tokens.css. Everything here is scoped
+ * to that root; nothing leaks out, and `all: initial` on :host stops the page's
+ * inherited properties (font, line-height, colour, direction) leaking in.
+ *
+ * Custom properties are the exception -- they DO cross a shadow boundary -- which
+ * is why tokens.css redeclares every --nc-* name on :host.
+ */
+
+:host {
+  all: initial;
+  position: fixed;
+  inset: 0;
+  z-index: var(--nc-z-host);
+  display: block;
+  /* Re-establish what `all: initial` just cleared. */
+  font-family: var(--nc-font);
+  font-size: var(--nc-text-base);
+  line-height: var(--nc-leading-normal);
+  color: var(--nc-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+.nc-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none; /* pointer events drive selection; never pan the page */
+}
+
+/* Crosshair stays put even with a frame committed -- you can always draw a new
+   one over the old. The marquee and handles carry their own cursors. */
+
+/* --- frozen backdrop ------------------------------------------------------
+ * The viewport as it was the instant before the overlay existed. Sized to the
+ * viewport in CSS pixels; the underlying bitmap is larger on a HiDPI display
+ * and the browser downscales it, which is exactly what the page itself was
+ * doing a moment ago.
+ */
+.nc-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+
+/* --- scrim ----------------------------------------------------------------
+ * Four rectangles around the selection rather than one box-shadow spread.
+ * v1 used `box-shadow: 0 0 0 9999px` on the selection box, which breaks down on
+ * very large viewports and cannot be dimmed independently of the border.
+ * Four rects are exact at any size and cost nothing.
+ */
+.nc-scrim {
+  position: absolute;
+  background: var(--nc-scrim);
+  pointer-events: none;
+  transition: opacity var(--nc-duration-fast) var(--nc-ease);
+}
+
+/* --- selection ------------------------------------------------------------ */
+.nc-marquee {
+  position: absolute;
+  pointer-events: auto;
+  cursor: move;
+  /* White outer, purple inner. A marquee sits on top of whatever the page
+     happens to contain, so no single colour can promise contrast against it. */
+  outline: 1px solid var(--nc-marquee-outer);
+  box-shadow: inset 0 0 0 var(--nc-marquee-width) var(--nc-marquee-inner);
+}
+
+.nc-marquee[hidden] { display: none; }
+
+.nc-handle {
+  position: absolute;
+  width: var(--nc-handle-size);
+  height: var(--nc-handle-size);
+  background: var(--nc-handle-fill);
+  border: 2px solid var(--nc-handle-border);
+  border-radius: 2px;
+  pointer-events: auto;
+  /* Constant screen size: handles are chrome, not content, and must stay
+     hittable regardless of devicePixelRatio. */
+}
+
+/* Fitts, not cosmetics: the visible handle stays small, the target does not. */
+.nc-handle::before {
+  content: '';
+  position: absolute;
+  inset: calc((var(--nc-handle-size) - var(--nc-handle-hit)) / 2);
+}
+
+.nc-handle[data-dir='nw'] { cursor: nwse-resize; }
+.nc-handle[data-dir='n']  { cursor: ns-resize; }
+.nc-handle[data-dir='ne'] { cursor: nesw-resize; }
+.nc-handle[data-dir='e']  { cursor: ew-resize; }
+.nc-handle[data-dir='se'] { cursor: nwse-resize; }
+.nc-handle[data-dir='s']  { cursor: ns-resize; }
+.nc-handle[data-dir='sw'] { cursor: nesw-resize; }
+.nc-handle[data-dir='w']  { cursor: ew-resize; }
+
+/* --- dimension badge ------------------------------------------------------ */
+.nc-badge {
+  position: absolute;
+  padding: var(--nc-space-1) var(--nc-space-3);
+  background: var(--nc-surface-glass);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-sm);
+  color: var(--nc-text);
+  font-size: var(--nc-text-xs);
+  font-weight: var(--nc-weight-medium);
+  white-space: nowrap;
+  pointer-events: none;
+  /* Tabular figures stop the badge twitching as the digits change mid-drag. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+.nc-badge[hidden] { display: none; }
+
+/* --- command pill --------------------------------------------------------- */
+.nc-pill {
+  position: absolute;
+  top: var(--nc-space-6);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: var(--nc-space-2);
+  padding: var(--nc-space-2);
+  background: var(--nc-surface-glass);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-pill);
+  box-shadow: var(--nc-shadow-toolbar);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  pointer-events: auto;
+  max-width: calc(100vw - var(--nc-space-7));
+}
+
+.nc-hint {
+  padding: 0 var(--nc-space-4);
+  color: var(--nc-text-muted);
+  font-size: var(--nc-text-base);
+  white-space: nowrap;
+}
+
+.nc-divider {
+  width: 1px;
+  align-self: stretch;
+  margin: var(--nc-space-1) var(--nc-space-1);
+  background: var(--nc-border-strong);
+}
+
+/* --- buttons -------------------------------------------------------------- */
+.nc-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nc-space-3);
+  padding: var(--nc-space-3) var(--nc-space-5);
+  border: none;
+  border-radius: var(--nc-radius-pill);
+  background: transparent;
+  color: var(--nc-text);
+  font-family: inherit;
+  font-size: var(--nc-text-base);
+  font-weight: var(--nc-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--nc-duration-fast) var(--nc-ease),
+    color var(--nc-duration-fast) var(--nc-ease);
+}
+
+.nc-btn:hover { background: var(--nc-surface-raised); }
+.nc-btn:active { background: var(--nc-surface-sunken); }
+
+.nc-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--nc-shadow-focus);
+}
+
+.nc-btn--primary {
+  background: var(--nc-accent);
+  color: var(--nc-text-on-accent);
+}
+.nc-btn--primary:hover { background: var(--nc-accent-hover); }
+.nc-btn--primary:active { background: var(--nc-accent-active); }
+
+.nc-btn--icon {
+  padding: var(--nc-space-3);
+  color: var(--nc-text-muted);
+}
+.nc-btn--icon:hover { color: var(--nc-text); }
+
+.nc-btn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* --- narrow windows -------------------------------------------------------
+ * Not a page breakpoint -- the overlay is always exactly the viewport. This is
+ * the window itself being too narrow for the pill to spell things out.
+ */
+@media (max-width: 640px) {
+  .nc-hint { display: none; }
+  .nc-btn__label { display: none; }
+  .nc-btn { padding: var(--nc-space-3); }
+}
+
+/* --- reduced motion -------------------------------------------------------
+ * tokens.css already collapses the durations; this kills the transitions
+ * outright so nothing eases at 0ms and still schedules a frame.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .nc-scrim,
+  .nc-btn {
+    transition: none;
+  }
+}

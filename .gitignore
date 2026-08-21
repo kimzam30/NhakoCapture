@@ -15,3 +15,6 @@ dist/
 
 # Scratch
 *.log
+
+# Preview screenshots from tools/preview.mjs
+preview/

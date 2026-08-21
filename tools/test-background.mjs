@@ -25,7 +25,7 @@ function eq(label, actual, expected) {
 }
 function ok(label, cond) { eq(label, !!cond, true); }
 
-function loadBackground({ captureFails = false, injectFails = false } = {}) {
+function loadBackground({ captureFails = false, injectFails = false, cssFails = false } = {}) {
   const calls = [];
   const listeners = {};
   const record = (name) => (...args) => { calls.push({ name, args }); };
@@ -54,6 +54,7 @@ function loadBackground({ captureFails = false, injectFails = false } = {}) {
     },
     runtime: {
       onMessage: { addListener: (fn) => { listeners.message = fn; } },
+      getURL: (p) => `chrome-extension://testid/${p}`,
       getContexts: async () => [],
       sendMessage: async (...a) => { calls.push({ name: 'runtime.sendMessage', args: a }); return { ok: true }; },
     },
@@ -66,7 +67,14 @@ function loadBackground({ captureFails = false, injectFails = false } = {}) {
     },
   };
 
-  const sandbox = { chrome, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout, clearTimeout, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
+  // The worker reads its own CSS out of the bundle; stub the read.
+  const fetch = async (url) => {
+    calls.push({ name: 'fetch', args: [url] });
+    if (cssFails) return { ok: false, status: 404 };
+    return { ok: true, text: async () => `/* ${url} */` };
+  };
+
+  const sandbox = { chrome, fetch, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout, clearTimeout, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
   sandbox.globalThis = sandbox;
   createContext(sandbox);
   runInContext(readFileSync(join(root, 'src/background.js'), 'utf8'), sandbox);
@@ -171,6 +179,40 @@ function loadBackground({ captureFails = false, injectFails = false } = {}) {
   eq('inject.js is injected last',
     inject.args[0].files[inject.args[0].files.length - 1], 'src/overlay/inject.js');
   ok('all injected files live under src/', inject.args[0].files.every((f) => f.startsWith('src/')));
+}
+
+/* --- stylesheets travel in the handoff, not fetched by the content script -- */
+{
+  const { listeners, calls } = loadBackground();
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+
+  const fetched = calls.filter((c) => c.name === 'fetch').map((c) => c.args[0]);
+  eq('two stylesheets read from the bundle', fetched.length, 2);
+  ok('tokens.css read first', fetched[0].endsWith('src/overlay/tokens.css'));
+  ok('overlay.css read second', fetched[1].endsWith('src/overlay/overlay.css'));
+
+  const handoff = calls.find((c) => c.name === 'tabs.sendMessage');
+  ok('handoff carries the css', typeof handoff.args[1].cssText === 'string');
+  ok('handoff carries the bitmap', handoff.args[1].dataUrl.startsWith('data:image/png'));
+  ok('css contains both sheets', handoff.args[1].cssText.split('\n').length >= 2);
+}
+
+/* The CSS is read once and cached; a second launch must not re-read it. */
+{
+  const { listeners, calls } = loadBackground();
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  eq('stylesheets are cached across launches',
+    calls.filter((c) => c.name === 'fetch').length, 2);
+}
+
+/* --- a stylesheet that will not load stops the launch cleanly ------------- */
+{
+  const { listeners, names } = loadBackground({ cssFails: true });
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  const seq = names();
+  ok('no handoff when styles fail', !seq.includes('tabs.sendMessage'));
+  ok('failure reported', seq.includes('setBadgeText'));
 }
 
 /* --- save: mints a blob url and opens a real picker ---------------------- */

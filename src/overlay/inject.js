@@ -1,11 +1,16 @@
 /* NhakoCapture — overlay entry point
  *
- * Owns the overlay lifecycle: receives the bitmap the background captured
- * before we existed, measures it, and hands off to the renderer.
+ * Owns the overlay lifecycle: receives the bitmap the background captured before
+ * we existed, measures it, mounts the stage, and wires selection, pill and
+ * keyboard together.
  *
- * Phase 2 establishes the lifecycle only. render() is a seam that Phase 3 (T4)
- * fills with the shadow host, frozen backdrop and scrim; everything around it
- * -- handoff, measurement, re-injection, teardown -- is final.
+ * The teardown discipline here is the fix for v1's two worst bugs. In v1 the
+ * keydown handler sat OUTSIDE the `if (!document.getElementById(...))` block
+ * that declared `overlay` and `selectionBox`, so it closed over nothing:
+ * pressing Escape threw ReferenceError every single time, and because it was
+ * outside the guard it registered another dead listener on every injection.
+ * Here every listener is registered through cleanup.listen(), so destroy()
+ * cannot drift out of sync with what start() set up.
  */
 (() => {
   'use strict';
@@ -14,11 +19,10 @@
   if (!NC) return;
 
   const geometry = NC.require('geometry');
+  const stageModule = NC.require('stage');
+  const selectionModule = NC.require('selection');
+  const toolbarModule = NC.require('toolbar');
 
-  /* Re-entry. Pressing Ctrl+Shift+5 while an overlay is already up re-runs every
-   * injected file. Without this, a second overlay stacks on the first and the
-   * first one's listeners are orphaned -- which is exactly the leak v1 has, one
-   * abandoned keydown handler per invocation. */
   if (NC.reinjected) {
     NC.reinjected = false;
     try {
@@ -28,8 +32,6 @@
     }
   }
 
-  /* Everything that must be undone on teardown is registered here, so destroy()
-   * cannot drift out of sync with what start() set up. */
   function createCleanup() {
     const tasks = [];
     return {
@@ -60,14 +62,14 @@
     });
   }
 
-  async function start(dataUrl) {
+  async function start({ dataUrl, cssText }) {
     if (session) destroy();
 
     const bitmap = await decode(dataUrl);
 
-    /* Measured from the bitmap we actually received rather than read from
+    /* Measured from the bitmap actually received rather than read from
      * devicePixelRatio: browser zoom lands on fractional ratios and the
-     * compositor rounds, so the real numbers are the only trustworthy ones. */
+     * compositor rounds, so these are the only trustworthy numbers. */
     const metrics = geometry.measure(
       bitmap.naturalWidth,
       bitmap.naturalHeight,
@@ -78,7 +80,7 @@
     const cleanup = createCleanup();
     session = { bitmap, metrics, cleanup };
 
-    /* Scroll lock. The backdrop is a still image, so any scroll underneath it
+    /* Scroll lock. The backdrop is a still image, so a scroll underneath it
      * would silently desync the overlay from the page it depicts. */
     const scroll = { x: window.scrollX, y: window.scrollY };
     const prevOverflow = document.documentElement.style.overflow;
@@ -88,21 +90,89 @@
       window.scrollTo(scroll.x, scroll.y);
     });
 
-    NC.destroy = destroy;
-    render(session, cleanup);
-    return metrics;
-  }
+    /* Focus is restored to whatever had it, so dismissing the overlay puts the
+     * user back exactly where they were. */
+    const previouslyFocused = document.activeElement;
+    cleanup.add(() => {
+      try { previouslyFocused?.focus?.(); } catch { /* element is gone */ }
+    });
 
-  /* Phase 3 (T4) replaces this body with the shadow host, backdrop and scrim.
-   * The signature is the contract. */
-  function render(_session, _cleanup) {
-    console.info(
-      '[NhakoCapture] captured %d×%d device px from a %d×%d viewport ' +
-      '(scaleX %s, scaleY %s) — overlay UI lands in Phase 3',
-      _session.metrics.bitmapWidth, _session.metrics.bitmapHeight,
-      _session.metrics.cssWidth, _session.metrics.cssHeight,
-      _session.metrics.scaleX.toFixed(4), _session.metrics.scaleY.toFixed(4)
-    );
+    const stage = stageModule.mount({ bitmap, metrics, cssText }, cleanup);
+    session.stage = stage;
+
+    const selection = selectionModule.create({
+      layer: stage.layer,
+      view: stage.view,
+      metrics,
+      setHole: stage.setHole,
+      onChange: (rect, mode) => {
+        stage.root.dataset.mode = mode;
+        toolbar.avoid(rect);
+        toolbar.setHint(
+          mode === 'adjusting'
+            ? 'Drag the edges to adjust'
+            : 'Drag to select an area'
+        );
+      },
+    });
+    session.selection = selection;
+
+    const toolbar = toolbarModule.create({
+      layer: stage.layer,
+      actions: {
+        captureFullScreen: () => selection.selectAll(),
+        /* savePdf is deliberately absent until Phase 5 builds it -- the pill
+         * renders only the actions that exist. */
+        cancel: () => destroy(),
+      },
+    });
+    session.toolbar = toolbar;
+
+    cleanup.listen(stage.root, 'pointerdown', selection.onPointerDown);
+    cleanup.listen(stage.root, 'pointermove', selection.onPointerMove);
+    cleanup.listen(stage.root, 'pointerup', selection.onPointerUp);
+    cleanup.listen(stage.root, 'pointercancel', selection.onPointerUp);
+
+    /* Capture phase, on the document: the page must not see these keys, and a
+     * page that stops propagation on its own handlers must not be able to
+     * swallow our Escape. */
+    cleanup.listen(document, 'keydown', (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        /* One step back, not straight out: from an adjusted frame Escape
+         * returns to a clean slate, and only then exits. */
+        if (selection.rect) selection.clear();
+        else destroy();
+        return;
+      }
+      if (selection.onKeyDown(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }, true);
+
+    /* The scroll lock stops the document scrolling, but a wheel over a nested
+     * scroller would still move content out from under a frozen backdrop. */
+    cleanup.listen(stage.root, 'wheel', (e) => e.preventDefault(), { passive: false });
+
+    /* A viewport resize invalidates the bitmap: it depicts a viewport that no
+     * longer exists, and every coordinate is measured against it. Rather than
+     * show a stale capture, stand down.
+     *
+     * But only on a REAL size change. Browsers fire resize for things that do
+     * not change the viewport at all -- pinch zoom, a docking devtools panel, a
+     * mobile URL bar sliding away, and a window being sized during startup.
+     * Tearing down the overlay on those would look like it had crashed. */
+    cleanup.listen(window, 'resize', () => {
+      if (window.innerWidth === metrics.cssWidth &&
+          window.innerHeight === metrics.cssHeight) return;
+      destroy();
+    });
+
+    stage.root.focus({ preventScroll: true });
+
+    return { metrics };
   }
 
   function destroy() {
@@ -112,18 +182,24 @@
     NC.destroy = null;
   }
 
-  NC.define('overlay', { start, destroy, get session() { return session; } });
+  NC.define('overlay', {
+    start,
+    destroy,
+    metrics: () => session?.metrics,
+    get session() { return session; },
+  });
 
-  /* One listener for the lifetime of the isolated world -- registered once,
-   * outside start(), so repeated invocations cannot stack handlers. */
+  /* Registered once for the lifetime of the isolated world, outside start(), so
+   * repeated invocations cannot stack handlers. */
   if (!NC.modules.__listening) {
     NC.define('__listening', true);
     chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       if (msg?.type !== 'nc:start') return false;
-      start(msg.dataUrl).then(
-        (metrics) => sendResponse({ ok: true, metrics }),
+      start(msg).then(
+        (result) => sendResponse({ ok: true, ...result }),
         (err) => {
           console.error('[NhakoCapture] start failed:', err);
+          destroy();
           sendResponse({ ok: false, error: String(err) });
         }
       );

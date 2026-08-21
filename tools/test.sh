@@ -40,6 +40,15 @@ PY
 step "unit tests"
 node tools/test-geometry.mjs   || fail=1
 node tools/test-background.mjs || fail=1
+node tools/test-modules.mjs    || fail=1
+node tools/test-selection.mjs  || fail=1
+
+step "browser integration (real Chromium, real input)"
+if command -v google-chrome >/dev/null || command -v chromium >/dev/null; then
+  node tools/preview.mjs "${NC_PREVIEW_DIR:-preview}" || fail=1
+else
+  echo "  skipped — no Chromium-based browser on PATH"
+fi
 
 if [ "$fail" -eq 0 ]; then printf '\n\033[32mall checks passed\033[0m\n'
 else printf '\n\033[31mFAILURES\033[0m\n'; fi
