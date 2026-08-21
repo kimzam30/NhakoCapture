@@ -42,6 +42,7 @@ node tools/test-geometry.mjs   || fail=1
 node tools/test-background.mjs || fail=1
 node tools/test-modules.mjs    || fail=1
 node tools/test-selection.mjs  || fail=1
+node tools/test-ops.mjs        || fail=1
 
 step "browser integration (real Chromium, real input)"
 if command -v google-chrome >/dev/null || command -v chromium >/dev/null; then

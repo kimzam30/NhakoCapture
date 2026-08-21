@@ -26,12 +26,17 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.argv[2] || join(ROOT, 'preview');
 const W = 1280, H = 800;
 
-const MODULES = [
-  'src/lib/namespace.js', 'src/lib/geometry.js', 'src/overlay/stage.js',
-  'src/overlay/selection.js', 'src/overlay/toolbar.js', 'src/overlay/inject.js',
-];
-const STYLES = ['src/overlay/tokens.css', 'src/overlay/overlay.css'];
 const read = (p) => readFileSync(join(ROOT, p), 'utf8');
+
+/* Injection order and stylesheet list are parsed out of background.js rather
+ * than duplicated here. A second copy silently drifts the moment a module is
+ * added, and then this harness tests a build nobody ships. */
+const BG = read('src/background.js');
+const MODULES = [...BG.matchAll(/'(src\/(?:lib|engine|overlay)\/[^']+\.js)'/g)]
+  .map((m) => m[1]).filter((f, i, a) => a.indexOf(f) === i);
+const STYLES = [...BG.matchAll(/'(src\/overlay\/[^']+\.css)'/g)]
+  .map((m) => m[1]).filter((f, i, a) => a.indexOf(f) === i);
+if (!MODULES.length || !STYLES.length) throw new Error('could not parse module list from background.js');
 
 /* A stand-in webpage: light, busy, and with a dark band, so the scrim and the
  * marquee can be judged against both extremes. */
@@ -156,7 +161,17 @@ async function mountOverlay(cdp) {
     (await cdp.send('Page.captureScreenshot', { format: 'png' })).data;
   /* A real page already has a window.chrome (loadTimes, csi) but no runtime,
    * so the shim has to be merged in rather than defaulted. */
-  await cdp.eval(`globalThis.chrome = Object.assign({}, globalThis.chrome, { runtime: { onMessage: { addListener(){} } } });`);
+  /* A real page already has a window.chrome (loadTimes, csi) but no runtime,
+   * so the shim has to be merged in rather than defaulted. sendMessage records
+   * what the overlay hands to the background instead of answering it, so the
+   * overlay half of copy/save can be asserted without the extension loaded. */
+  await cdp.eval(`globalThis.__sent = [];
+    globalThis.chrome = Object.assign({}, globalThis.chrome, {
+      runtime: {
+        onMessage: { addListener(){} },
+        sendMessage: async (msg) => { globalThis.__sent.push(msg); return globalThis.__reply ?? { ok: true }; },
+      },
+    });`);
   for (const m of MODULES) await cdp.eval(read(m));
   const css = STYLES.map(read).join('\n');
   await cdp.eval(`globalThis.__css = ${JSON.stringify(css)}; globalThis.__page = ${JSON.stringify(backdrop)};`);
@@ -173,6 +188,27 @@ async function key(cdp, k) {
     await cdp.send('Input.dispatchKeyEvent', { type, key: k, code: k, windowsVirtualKeyCode: k === 'Escape' ? 27 : 0 });
   }
   await sleep(150);
+}
+
+
+const shadowEval = (cdp, body) =>
+  cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot; ${body} })()`);
+
+const opCount = (cdp) => cdp.eval(`NhakoCapture.require('overlay').session.ops.length`);
+
+async function pickTool(cdp, label) {
+  await shadowEval(cdp, `[...sr.querySelectorAll('.nc-tool')].find(b => b.getAttribute('aria-label') === '${label}').click();`);
+  await sleep(150);
+}
+
+async function keyCombo(cdp, key, modifiers = 0) {
+  for (const type of ['keyDown', 'keyUp']) {
+    await cdp.send('Input.dispatchKeyEvent', {
+      type, key, code: `Key${key.toUpperCase()}`, modifiers,
+      windowsVirtualKeyCode: key.toUpperCase().charCodeAt(0),
+    });
+  }
+  await sleep(180);
 }
 
 async function shoot(cdp, name) {
@@ -257,6 +293,171 @@ async function main() {
     check('capture full screen selects the whole viewport',
       full && full.x === 0 && full.y === 0 && full.w === W, JSON.stringify(full));
     await shoot(cdp, '03-full-screen');
+
+
+    /* --- annotation engine ------------------------------------------------ */
+    await key(cdp, 'Escape'); await key(cdp, 'Escape');
+    await mountOverlay(cdp);
+    await drag(cdp, [260, 200], [900, 560]);
+    await sleep(200);
+
+    check('tool rail appears once a frame is committed',
+      await shadowEval(cdp, `return !sr.querySelector('.nc-rail').hidden;`));
+    check('rail carries all six tools',
+      (await shadowEval(cdp, `return sr.querySelectorAll('.nc-tool').length;`)) === 8, // 6 tools + undo/redo
+      String(await shadowEval(cdp, `return sr.querySelectorAll('.nc-tool').length;`)));
+    check('seven inks', (await shadowEval(cdp, `return sr.querySelectorAll('.nc-swatch').length;`)) === 7);
+    check('exactly one ink reads as selected',
+      (await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-swatch')].filter(b => b.classList.contains('is-active')).length;`)) === 1,
+      String(await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-swatch')].filter(b => b.classList.contains('is-active')).length;`)));
+    check('the selected ink is red by default',
+      (await shadowEval(cdp, `return sr.querySelector('.nc-swatch.is-active')?.dataset.ink;`)) === 'red');
+    check('exactly one stroke weight reads as selected',
+      (await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-weight')].filter(b => b.classList.contains('is-active')).length;`)) === 1);
+
+    await pickTool(cdp, 'Pencil');
+    check('pencil shows as active',
+      await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-tool')].some(b => b.classList.contains('is-active') && b.getAttribute('aria-label') === 'Pencil');`));
+
+    const beforeStroke = await opCount(cdp);
+    await drag(cdp, [360, 300], [700, 460]);
+    await sleep(200);
+    check('a stroke adds exactly one op', (await opCount(cdp)) - beforeStroke === 1,
+      `${beforeStroke} -> ${await opCount(cdp)}`);
+    check('drawing with a tool active does not reframe',
+      (await rectOf(cdp)) === JSON.stringify({ x: 260, y: 200, w: 640, h: 360 }), await rectOf(cdp));
+
+    /* undo / redo through the real keyboard path */
+    await keyCombo(cdp, 'z', 2 /* Ctrl */);
+    check('Ctrl+Z removes the stroke', await opCount(cdp) === beforeStroke);
+    await keyCombo(cdp, 'z', 2 | 8 /* Ctrl+Shift */);
+    check('Ctrl+Shift+Z puts it back', await opCount(cdp) === beforeStroke + 1);
+
+    /* arrow + highlight + text, so the screenshot shows the real thing */
+    await pickTool(cdp, 'Arrow');
+    await drag(cdp, [420, 520], [640, 380]);
+    await sleep(150);
+    await pickTool(cdp, 'Highlight');
+    await drag(cdp, [300, 250], [560, 250]);
+    await sleep(150);
+    check('four ops recorded', await opCount(cdp) === 3, String(await opCount(cdp)));
+
+    /* Blur must actually redact. Measured differentially: local contrast in the
+     * same region with the blur applied versus with it undone. An absolute
+     * threshold would depend on whatever the page happens to show there. */
+    await pickTool(cdp, 'Blur');
+    // over the 'Build' card's body text: a region with real detail, so the
+    // measurement can actually discriminate.
+    await drag(cdp, [455, 405], [845, 490]);
+    await sleep(250);
+    check('blur is recorded as an op', await opCount(cdp) === 4, String(await opCount(cdp)));
+
+    const contrast = `(() => {
+      const s = NhakoCapture.require('overlay').session;
+      const c = document.getElementById('nhako-capture-host').shadowRoot.querySelector('.nc-annotate');
+      const g = c.getContext('2d');
+      const geo = NhakoCapture.require('geometry');
+      const m = NhakoCapture.require('overlay').metrics();
+      const base = geo.toDevice(s.selection.rect, m);
+      const dev = geo.toDevice({ x: 470, y: 440, w: 90, h: 34 }, m);
+      const d = g.getImageData(dev.x - base.x, dev.y - base.y, dev.w, dev.h).data;
+      let n = 0, sum = 0, sum2 = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const v = (d[i] + d[i + 1] + d[i + 2]) / 3;
+        sum += v; sum2 += v * v; n++;
+      }
+      if (!n) return -1;
+      return Math.sqrt(Math.max(0, sum2 / n - (sum / n) ** 2));
+    })()`;
+
+    const sBlurred = await cdp.eval(contrast);
+    await cdp.eval(`NhakoCapture.require('overlay').session.ops.undo()`);
+    await sleep(200);
+    const sSharp = await cdp.eval(contrast);
+    await cdp.eval(`NhakoCapture.require('overlay').session.ops.redo()`);
+    await sleep(200);
+
+    check('the sample region was readable', sSharp > 0 && sBlurred >= 0,
+      `sharp=${sSharp} blurred=${sBlurred}`);
+    check('blur destroys local contrast (real redaction, not a grey box)',
+      sBlurred < sSharp * 0.6,
+      `stddev sharp=${Number(sSharp).toFixed(2)} blurred=${Number(sBlurred).toFixed(2)}`);
+
+    await pickTool(cdp, 'Text');
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 340, y: 500, button: 'left', buttons: 1, clickCount: 1 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 340, y: 500, button: 'left', buttons: 1, clickCount: 1 });
+    await sleep(250);
+    check('text tool opens an input',
+      await shadowEval(cdp, `return !!sr.querySelector('.nc-textentry');`));
+    await cdp.send('Input.insertText', { text: 'look here' });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
+    await sleep(250);
+    check('text commits as an op', await opCount(cdp) === 5, String(await opCount(cdp)));
+    check('the input is gone', !(await shadowEval(cdp, `return !!sr.querySelector('.nc-textentry');`)));
+
+    await shoot(cdp, '05-annotated');
+
+    /* the exported image is the device-pixel crop, not the CSS one */
+    const exported = await cdp.eval(`(() => {
+      const c = NhakoCapture.require('overlay').session.annotate.compose();
+      return c.width + 'x' + c.height;
+    })()`);
+    check('export is the device-pixel crop', exported === '640x360', exported);
+
+    /* --- copy / save handoff --------------------------------------------- */
+    await cdp.eval(`globalThis.__sent = []; globalThis.__reply = { ok: true };`);
+    await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+    await sleep(300);
+    const sent = await cdp.eval(`globalThis.__sent.map(m => ({ type: m.type, len: m.dataUrl.length, head: m.dataUrl.slice(0, 22) }))`);
+    check('Copy hands one message to the background', sent.length === 1, JSON.stringify(sent));
+    check('addressed as nc:copy', sent[0]?.type === 'nc:copy', sent[0]?.type);
+    check('carrying a PNG data URL', sent[0]?.head === 'data:image/png;base64,', sent[0]?.head);
+    check('with the annotated image in it', sent[0]?.len > 5000, String(sent[0]?.len));
+    check('and the overlay confirms', 
+      (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied!',
+      await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`));
+
+    /* a degraded clipboard result must say so rather than claim a clean copy */
+    await mountOverlay(cdp);
+    await drag(cdp, [260, 200], [900, 560]);
+    await sleep(200);
+    await cdp.eval(`globalThis.__sent = []; globalThis.__reply = { ok: true, degraded: true, note: 'Pasted as HTML' };`);
+    await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+    await sleep(300);
+    check('a degraded copy is reported honestly, not as "Copied!"',
+      (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Pasted as HTML',
+      await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`));
+
+    /* a failure must leave the capture on screen, not throw it away */
+    await mountOverlay(cdp);
+    await drag(cdp, [260, 200], [900, 560]);
+    await sleep(200);
+    await cdp.eval(`globalThis.__reply = { ok: false, error: 'clipboard unavailable' };`);
+    await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+    await sleep(400);
+    check('a failed copy leaves the overlay up', await hostCount(cdp) === 1);
+    check('and says so', /failed/i.test(await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)));
+    await cdp.eval(`globalThis.__reply = { ok: true };`);
+
+    /* --- restore a working frame for the remaining checks ----------------- */
+    await mountOverlay(cdp);
+    await drag(cdp, [260, 200], [900, 560]);
+    await sleep(200);
+
+    /* zoom loupe */
+    await pickTool(cdp, 'Zoom');
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 380 });
+    await sleep(200);
+    check('zoom shows a loupe',
+      await shadowEval(cdp, `return !sr.querySelector('.nc-loupe').hidden;`));
+    await shoot(cdp, '06-zoom');
+
+    /* Escape releases the tool before clearing the frame */
+    await key(cdp, 'Escape');
+    check('Escape releases the tool first',
+      (await cdp.eval(`NhakoCapture.require('overlay').session.annotate.tool`)) === null);
+    check('and the frame survives', (await rectOf(cdp)) !== 'null');
 
     /* --- narrow window: pill collapses to icons -------------------------- */
     await key(cdp, 'Escape'); await key(cdp, 'Escape');

@@ -24,7 +24,7 @@ const ok = (label, cond) => eq(label, !!cond, true);
 
 const bg = read('src/background.js');
 
-const overlayFiles = [...bg.matchAll(/'(src\/(?:lib|overlay)\/[^']+\.js)'/g)]
+const overlayFiles = [...bg.matchAll(/'(src\/(?:lib|engine|overlay)\/[^']+\.js)'/g)]
   .map((m) => m[1])
   .filter((f, i, a) => a.indexOf(f) === i);
 

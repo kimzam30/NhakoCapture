@@ -19,8 +19,11 @@
   if (!NC) return;
 
   const geometry = NC.require('geometry');
+  const opsModule = NC.require('ops');
   const stageModule = NC.require('stage');
   const selectionModule = NC.require('selection');
+  const annotateModule = NC.require('annotate');
+  const railModule = NC.require('rail');
   const toolbarModule = NC.require('toolbar');
 
   if (NC.reinjected) {
@@ -52,6 +55,11 @@
   }
 
   let session = null;
+
+  function hintFor(mode) {
+    if (mode !== 'adjusting') return 'Drag to select an area';
+    return 'Annotate, or drag the edges to adjust';
+  }
 
   function decode(dataUrl) {
     return new Promise((resolve, reject) => {
@@ -100,6 +108,9 @@
     const stage = stageModule.mount({ bitmap, metrics, cssText }, cleanup);
     session.stage = stage;
 
+    const ops = opsModule.create({ onChange: () => { annotate.paint(); rail.sync(); } });
+    session.ops = ops;
+
     const selection = selectionModule.create({
       layer: stage.layer,
       view: stage.view,
@@ -108,14 +119,45 @@
       onChange: (rect, mode) => {
         stage.root.dataset.mode = mode;
         toolbar.avoid(rect);
-        toolbar.setHint(
-          mode === 'adjusting'
-            ? 'Drag the edges to adjust'
-            : 'Drag to select an area'
-        );
+        toolbar.setHint(hintFor(mode));
+        annotate.paint();
+        rail.position(mode === 'adjusting' ? rect : null);
+        rail.sync();
+        if (!rect) {
+          // Frame gone: the marks belonged to it.
+          annotate.setTool(null);
+          ops.clear();
+        }
       },
     });
     session.selection = selection;
+
+    const annotate = annotateModule.create({
+      layer: stage.layer,
+      bitmap,
+      metrics,
+      ops,
+      getRect: () => selection.rect,
+      onChange: () => {
+        stage.root.dataset.tool = annotate.tool ?? '';
+        annotate.paint();
+        rail.sync();
+        toolbar.setHint(hintFor(selection.mode));
+      },
+    });
+    session.annotate = annotate;
+
+    const rail = railModule.create({
+      layer: stage.layer,
+      view: stage.view,
+      annotate,
+      ops,
+      actions: {
+        copy: () => finish('copy'),
+        save: () => finish('save'),
+      },
+    });
+    session.rail = rail;
 
     const toolbar = toolbarModule.create({
       layer: stage.layer,
@@ -128,28 +170,72 @@
     });
     session.toolbar = toolbar;
 
-    cleanup.listen(stage.root, 'pointerdown', selection.onPointerDown);
-    cleanup.listen(stage.root, 'pointermove', selection.onPointerMove);
-    cleanup.listen(stage.root, 'pointerup', selection.onPointerUp);
-    cleanup.listen(stage.root, 'pointercancel', selection.onPointerUp);
+    /* Deferred until every piece exists: the change handlers wired above refer
+     * to annotate, rail and toolbar, so nothing may fire until all three are
+     * bound. */
+    rail.init();
+
+    /* With a tool active the pointer belongs to annotation, not to reframing.
+     * Selection only sees the event when no tool has claimed it. */
+    cleanup.listen(stage.root, 'pointerdown', (e) => {
+      if (e.button !== 0) return;
+      if (annotate.tool && selection.rect && annotate.onPointerDown(e)) {
+        e.preventDefault();
+        stage.root.setPointerCapture(e.pointerId);
+        return;
+      }
+      selection.onPointerDown(e);
+    });
+    cleanup.listen(stage.root, 'pointermove', (e) => {
+      if (annotate.onPointerMove(e)) { e.preventDefault(); return; }
+      selection.onPointerMove(e);
+    });
+    cleanup.listen(stage.root, 'pointerup', (e) => {
+      if (annotate.onPointerUp(e)) {
+        try { stage.root.releasePointerCapture(e.pointerId); } catch { /* gone */ }
+        return;
+      }
+      selection.onPointerUp(e);
+    });
+    cleanup.listen(stage.root, 'pointercancel', (e) => {
+      if (annotate.onPointerUp(e)) return;
+      selection.onPointerUp(e);
+    });
 
     /* Capture phase, on the document: the page must not see these keys, and a
      * page that stops propagation on its own handlers must not be able to
      * swallow our Escape. */
     cleanup.listen(document, 'keydown', (event) => {
+      // The text tool owns the keyboard while it is open.
+      if (annotate.editing) return;
+
+      const mod = event.ctrlKey || event.metaKey;
+      const stop = () => { event.preventDefault(); event.stopPropagation(); };
+
       if (event.key === 'Escape') {
-        event.preventDefault();
-        event.stopPropagation();
-        /* One step back, not straight out: from an adjusted frame Escape
-         * returns to a clean slate, and only then exits. */
-        if (selection.rect) selection.clear();
+        stop();
+        /* One step back per press, never straight out: a chosen tool releases
+         * first, then the frame clears, and only then does the overlay exit. */
+        if (annotate.tool) annotate.setTool(null);
+        else if (selection.rect) selection.clear();
         else destroy();
         return;
       }
-      if (selection.onKeyDown(event)) {
-        event.preventDefault();
-        event.stopPropagation();
+
+      if (mod && event.key.toLowerCase() === 'z') {
+        stop();
+        event.shiftKey ? ops.redo() : ops.undo();
+        return;
       }
+      if (mod && event.key.toLowerCase() === 'y') { stop(); ops.redo(); return; }
+      if (mod && event.key.toLowerCase() === 'c') { stop(); finish('copy'); return; }
+      if (mod && event.key.toLowerCase() === 's') { stop(); finish('save'); return; }
+      if (mod) return;
+
+      // Single-key tool shortcuts, but only once there is a frame to draw on.
+      if (selection.rect && !event.altKey && rail.handleKey(event.key)) { stop(); return; }
+
+      if (selection.onKeyDown(event)) stop();
     }, true);
 
     /* The scroll lock stops the document scrolling, but a wheel over a nested
@@ -169,6 +255,41 @@
           window.innerHeight === metrics.cssHeight) return;
       destroy();
     });
+
+    /* Compose once, then hand the same bytes to whichever action was asked
+     * for. Failure leaves the overlay up so the capture is not lost. */
+    async function finish(action) {
+      const canvas = annotate.compose();
+      if (!canvas) return;
+
+      const dataUrl = canvas.toDataURL('image/png');
+      toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…');
+
+      let res;
+      try {
+        res = await chrome.runtime.sendMessage({ type: `nc:${action}`, dataUrl });
+      } catch (err) {
+        res = { ok: false, error: String(err) };
+      }
+
+      if (res?.ok) {
+        if (res.degraded) {
+          // Pasted as HTML rather than a real image flavour. Say so instead of
+          // letting it look like a clean copy that silently is not one.
+          toolbar.setHint(res.note ?? 'Copied (as HTML)');
+          setTimeout(() => destroy(), 1600);
+        } else {
+          toolbar.setHint(action === 'copy' ? 'Copied!' : 'Saved');
+          setTimeout(() => destroy(), 600);
+        }
+        return;
+      }
+
+      if (res?.cancelled) { toolbar.setHint(hintFor(selection.mode)); return; }
+      toolbar.setHint(action === 'copy' ? 'Copy failed' : 'Save failed');
+      console.error('[NhakoCapture]', action, 'failed:', res?.error);
+    }
+    session.finish = finish;
 
     stage.root.focus({ preventScroll: true });
 

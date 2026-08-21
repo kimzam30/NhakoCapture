@@ -96,34 +96,42 @@ phase, not per task.
 
 ## Interactions & States — Phase 4
 
-- [ ] **T8 · Op list and undo/redo** _(build before any tool)_: append-only op
+- [~] **T8 · Op list and undo/redo** _(build before any tool)_: append-only op
       records, undo/redo stacks, full re-render pipeline (base → replay ops).
       Done when ten mixed marks undo and redo in exact order. _New. Every
       subsequent tool task depends on this; immediate-mode painting cannot undo._
+      **Built.** 27 unit tests pin the history semantics: a live drag is one undo
+      step (not one per pointermove), and a new mark discards the redo branch.
 
-- [ ] **T9 · Tool rail + ink swatches**: the rail itself, positioned outside the
+- [~] **T9 · Tool rail + ink swatches**: the rail itself, positioned outside the
       selection, flipping above when there is no room below and clamping to the
       viewport. Seven-ink swatch row collapsed to the active swatch. Three stroke
       weights. Covers: idle, hover, active-tool, focus-visible, disabled.
       _Depends on: T5. Uses `--nc-accent-bright` for the active indicator —
       `--nc-accent` fails 3:1 against the chrome._
 
-- [ ] **T10 · Pencil and arrow**: freehand path with smoothing, and a
+- [~] **T10 · Pencil and arrow**: freehand path with smoothing, and a
       click-drag arrow with a proportional head. _Depends on: T8, T9._
 
-- [ ] **T11 · Blur and highlight**: blur = `ctx.filter` over a clipped copy of
+- [~] **T11 · Blur and highlight**: blur = `ctx.filter` over a clipped copy of
       the base region, so it redacts pixels rather than drawing grey over them;
       highlight = translucent stroke under `multiply`. Done when a blurred region
       cannot be recovered from the exported PNG. _Depends on: T8, T9._
+      **Built.** Redaction is verified differentially in a real canvas — local
+      contrast over a text region, blur applied vs undone.
 
-- [ ] **T12 · Text tool**: click to place, inline editing, three sizes, current
+- [~] **T12 · Text tool**: click to place, inline editing, three sizes, current
       ink, `Escape` commits. _Depends on: T8, T9._
 
-- [ ] **T13 · Zoom**: zoom the editing stage only — never baked into output.
-      Done when exporting at 200% zoom yields identical bytes to exporting at
-      100%. _Depends on: T5._
+- [~] **T13 · Zoom**: **shipped as a magnifier loupe, not a stage zoom.** Opera
+      zooms its editor canvas; that cannot work here, because this overlay is
+      pinned 1:1 to the live page and scaling it would desync the frame from the
+      pixels it depicts. A loupe delivers the same inspect-closely value and
+      keeps the alignment exact. It magnifies the capture, not the marks.
+      _Depends on: T5. Flag for review — this is the one place the build
+      deliberately departs from Opera's behaviour._
 
-- [ ] **T14 · Copy and Save**: composite selection + ops, route through T3.
+- [~] **T14 · Copy and Save**: composite selection + ops, route through T3.
       `Copied!` for ~600ms then teardown; Save opens the picker then tears down.
       _Depends on: T3, T8._
 

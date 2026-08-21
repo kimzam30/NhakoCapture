@@ -20,8 +20,12 @@ const OFFSCREEN_PATH = 'src/offscreen.html';
 const OVERLAY_FILES = [
   'src/lib/namespace.js',
   'src/lib/geometry.js',
+  'src/engine/ops.js',
+  'src/engine/render.js',
   'src/overlay/stage.js',
   'src/overlay/selection.js',
+  'src/overlay/annotate.js',
+  'src/overlay/rail.js',
   'src/overlay/toolbar.js',
   'src/overlay/inject.js',
 ];
