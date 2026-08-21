@@ -19,7 +19,11 @@
   const NUDGE = 1;
   const NUDGE_FAST = 10;
 
-  function create({ layer, view, metrics, setHole, onChange }) {
+  /* `origin` is the stage's top-left in viewport CSS pixels. It is {0,0} for the
+   * in-page overlay, which fills the viewport, and the letterbox offset in the
+   * fallback editor window, where the image is fitted inside a larger window.
+   * Only absolute positions need it -- moves and resizes work off deltas. */
+  function create({ layer, view, metrics, setHole, onChange, origin = { x: 0, y: 0 } }) {
     const marquee = document.createElement('div');
     marquee.className = 'nc-marquee';
     marquee.hidden = true;
@@ -106,13 +110,16 @@
     }
 
     /* --- drawing a new frame --------------------------------------------- */
+    const at = (e) => ({ x: e.clientX - origin.x, y: e.clientY - origin.y });
+
     function beginDraw(event) {
       mode = 'drawing';
-      const origin = { x: event.clientX, y: event.clientY };
+      const from = at(event);
       drag = {
         pointerId: event.pointerId,
         update: (e) => {
-          rect = clamp(geometry.normalizeDrag(origin.x, origin.y, e.clientX, e.clientY));
+          const to = at(e);
+          rect = clamp(geometry.normalizeDrag(from.x, from.y, to.x, to.y));
           paint();
           emit();
         },

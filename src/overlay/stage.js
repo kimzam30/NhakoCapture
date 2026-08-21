@@ -33,7 +33,10 @@
     return node;
   }
 
-  function mount({ bitmap, metrics, cssText }, cleanup) {
+  /* `box` fits the stage to a rectangle instead of the whole viewport. The
+   * in-page overlay omits it; the fallback editor window uses it to letterbox
+   * a capture whose aspect ratio does not match the window. */
+  function mount({ bitmap, metrics, cssText, box }, cleanup) {
     /* A previous host can survive a page's own DOM tricks; never stack two. */
     document.getElementById(HOST_ID)?.remove();
 
@@ -44,6 +47,13 @@
      * hence the inline display, which beats any page rule short of the same
      * !important on a more specific selector. */
     host.style.setProperty('display', 'block', 'important');
+    if (box) {
+      host.style.inset = 'auto';
+      host.style.left = `${box.left}px`;
+      host.style.top = `${box.top}px`;
+      host.style.width = `${box.width}px`;
+      host.style.height = `${box.height}px`;
+    }
 
     const shadow = host.attachShadow({ mode: 'open' });
     adoptStyles(shadow, cssText);
@@ -78,6 +88,7 @@
     cleanup.add(() => host.remove());
 
     const view = { width: metrics.cssWidth, height: metrics.cssHeight };
+    const origin = box ? { x: box.left, y: box.top } : { x: 0, y: 0 };
 
     /* Position the four rects so the hole is exactly `rect`. With no selection
      * the top rect covers everything and the other three collapse. */
@@ -109,7 +120,7 @@
 
     setHole(null);
 
-    return { host, shadow, root, layer, view, setHole };
+    return { host, shadow, root, layer, view, origin, setHole };
   }
 
   NC.define('stage', { mount, HOST_ID });

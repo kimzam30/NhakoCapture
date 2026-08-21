@@ -54,7 +54,7 @@
     return { cancel: () => finish(false) };
   }
 
-  function create({ layer, bitmap, metrics, ops, getRect, onChange }) {
+  function create({ layer, bitmap, metrics, ops, getRect, onChange, origin = { x: 0, y: 0 } }) {
     const canvas = document.createElement('canvas');
     canvas.className = 'nc-annotate';
     canvas.hidden = true;
@@ -92,7 +92,8 @@
       return dev.w > 0 && dev.h > 0 ? out : null;
     }
 
-    const local = (e) => [e.clientX, e.clientY];
+    /* Stage-local CSS coordinates. See selection.js for what `origin` is. */
+    const local = (e) => [e.clientX - origin.x, e.clientY - origin.y];
 
     function begin(e) {
       const p = local(e);
@@ -168,13 +169,14 @@
       if (!rect) { loupe.hidden = true; return; }
       const Z = 3;
       loupe.hidden = false;
-      loupe.style.left = `${e.clientX}px`;
-      loupe.style.top = `${e.clientY}px`;
+      const [lx, ly] = local(e);
+      loupe.style.left = `${lx}px`;
+      loupe.style.top = `${ly}px`;
       loupe.style.backgroundImage = `url("${bitmap.src}")`;
       loupe.style.backgroundSize = `${metrics.cssWidth * Z}px ${metrics.cssHeight * Z}px`;
       const size = parseFloat(getComputedStyle(loupe).width) || 140;
       loupe.style.backgroundPosition =
-        `${-e.clientX * Z + size / 2}px ${-e.clientY * Z + size / 2}px`;
+        `${-lx * Z + size / 2}px ${-ly * Z + size / 2}px`;
     }
 
     return {
