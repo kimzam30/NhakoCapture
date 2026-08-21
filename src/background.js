@@ -95,28 +95,69 @@ async function captureViewport(windowId) {
   return chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
 }
 
+/* Pages where a content script cannot run get the fallback editor window
+ * instead. Sized to the capture where possible so the image is not letterboxed
+ * into a strip, and clamped so it cannot open larger than the display. */
+const FALLBACK_MIN = { width: 720, height: 520 };
+const FALLBACK_MAX = { width: 1400, height: 900 };
+
+async function fallbackWindowSize(dataUrl) {
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const bmp = await createImageBitmap(blob);
+    const CHROME = { width: 32, height: 96 }; // window frame + our toolbars
+    const size = {
+      width: Math.round(Math.min(Math.max(bmp.width + CHROME.width, FALLBACK_MIN.width), FALLBACK_MAX.width)),
+      height: Math.round(Math.min(Math.max(bmp.height + CHROME.height, FALLBACK_MIN.height), FALLBACK_MAX.height)),
+    };
+    bmp.close();
+    return size;
+  } catch {
+    return { width: 1100, height: 760 };
+  }
+}
+
+async function openFallback(dataUrl, tabId) {
+  try {
+    await chrome.storage.local.set({ capturedImage: dataUrl });
+    const size = await fallbackWindowSize(dataUrl);
+    await chrome.windows.create({
+      url: 'src/fallback/editor.html',
+      type: 'popup',
+      focused: true,
+      ...size,
+    });
+    return true;
+  } catch (err) {
+    await reportFailure(tabId, 'could not open the editor', String(err));
+    return false;
+  }
+}
+
 async function launch(tab) {
   if (!tab?.id) return;
 
   // Clear any leftover failure badge from a previous attempt.
   chrome.action.setBadgeText({ tabId: tab.id, text: '' }).catch(() => {});
 
-  if (isRestricted(tab.url)) {
-    // Phase 6 (T16) routes this to the fallback editor window. Until then, say
-    // so plainly rather than failing silently the way v1 does.
-    await reportFailure(
-      tab.id,
-      'this page is off-limits',
-      'Browser pages and the Web Store block extensions from reading them.'
-    );
-    return;
-  }
-
+  /* Capture first, always -- before any UI of ours exists, and before deciding
+   * where the capture is going to be edited. */
   let dataUrl;
   try {
     dataUrl = await captureViewport(tab.windowId);
   } catch (err) {
-    await reportFailure(tab.id, 'could not capture this tab', String(err));
+    await reportFailure(
+      tab.id,
+      'this page cannot be captured',
+      'Browser pages and the Web Store are off-limits to extensions.'
+    );
+    console.warn('[NhakoCapture] capture refused:', err);
+    return;
+  }
+
+  // Known-restricted pages skip the injection attempt entirely.
+  if (isRestricted(tab.url)) {
+    await openFallback(dataUrl, tab.id);
     return;
   }
 
@@ -126,7 +167,10 @@ async function launch(tab) {
       files: OVERLAY_FILES,
     });
   } catch (err) {
-    await reportFailure(tab.id, 'could not open the overlay here', String(err));
+    // Not on the restricted list but still un-injectable -- a sandboxed frame, a
+    // strict CSP, a page mid-navigation. The capture is already in hand, so use it.
+    console.warn('[NhakoCapture] injection blocked, using the editor window:', err);
+    await openFallback(dataUrl, tab.id);
     return;
   }
 
@@ -141,7 +185,8 @@ async function launch(tab) {
   try {
     await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText });
   } catch (err) {
-    await reportFailure(tab.id, 'the overlay did not respond', String(err));
+    console.warn('[NhakoCapture] overlay did not answer, using the editor window:', err);
+    await openFallback(dataUrl, tab.id);
   }
 }
 

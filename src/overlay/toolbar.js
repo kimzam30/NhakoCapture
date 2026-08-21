@@ -48,7 +48,10 @@
     return btn;
   }
 
-  function create({ layer, actions }) {
+  /* `top` overrides the stylesheet's placement, in stage-local CSS pixels. The
+   * fallback window uses it to lift the pill into the margin above the capture,
+   * where it does not sit on top of the image it describes. */
+  function create({ layer, actions, top, origin = { x: 0, y: 0 } }) {
     const pill = document.createElement('div');
     pill.className = 'nc-pill';
     pill.setAttribute('role', 'toolbar');
@@ -96,6 +99,7 @@
      * selection.js's hit test. */
     pill.addEventListener('pointerdown', (e) => e.stopPropagation());
 
+    if (top !== undefined) pill.style.top = `${top}px`;
     layer.appendChild(pill);
 
     return {
@@ -105,10 +109,18 @@
       bottom() { return pill.getBoundingClientRect().bottom + 8; },
       hide() { pill.style.display = 'none'; },
       show() { pill.style.display = ''; },
-      /* Keeps the pill out of the way when a selection is drawn underneath it. */
+      /* Keeps the pill out of the way when a selection is drawn underneath it.
+       *
+       * getBoundingClientRect is viewport-space but `rect` is stage-local, so
+       * the frame has to be lifted into viewport space first. They coincide for
+       * the in-page overlay, where the stage is the viewport, and do not in the
+       * fallback window -- where getting this wrong dims the pill permanently. */
       avoid(rect) {
         const box = pill.getBoundingClientRect();
-        const overlaps = rect && rect.y < box.bottom && rect.x < box.right && rect.x + rect.w > box.left;
+        const r = rect && {
+          x: rect.x + origin.x, y: rect.y + origin.y, w: rect.w, h: rect.h,
+        };
+        const overlaps = r && r.y < box.bottom && r.x < box.right && r.x + r.w > box.left;
         pill.style.opacity = overlaps ? '0.25' : '';
         pill.style.pointerEvents = overlaps ? 'none' : '';
       },

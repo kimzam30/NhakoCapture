@@ -36,7 +36,11 @@
   /* `box` fits the stage to a rectangle instead of the whole viewport. The
    * in-page overlay omits it; the fallback editor window uses it to letterbox
    * a capture whose aspect ratio does not match the window. */
-  function mount({ bitmap, metrics, cssText, box }, cleanup) {
+  /* `clip: false` lets the toolbars paint outside the stage box. The in-page
+   * overlay clips (the stage IS the viewport, so there is no outside), but the
+   * fallback window fits the capture into a letterboxed box and needs the pill
+   * and rail to sit in the margin around it. */
+  function mount({ bitmap, metrics, cssText, box, clip = true }, cleanup) {
     /* A previous host can survive a page's own DOM tricks; never stack two. */
     document.getElementById(HOST_ID)?.remove();
 
@@ -59,6 +63,7 @@
     adoptStyles(shadow, cssText);
 
     const root = el('div', 'nc-root', shadow);
+    if (!clip) root.classList.add('is-unclipped');
     root.setAttribute('role', 'application');
     root.setAttribute('aria-label', 'Nhako Capture — select an area to capture');
     root.tabIndex = -1;

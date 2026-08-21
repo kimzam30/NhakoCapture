@@ -34,11 +34,14 @@
   position: absolute;
   inset: 0;
   overflow: hidden;
+  /* See stage.js: the fallback window needs its toolbars in the margin. */
   cursor: crosshair;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none; /* pointer events drive selection; never pan the page */
 }
+
+.nc-root.is-unclipped { overflow: visible; }
 
 /* Crosshair stays put even with a frame committed -- you can always draw a new
    one over the old. The marquee and handles carry their own cursors. */

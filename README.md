@@ -207,6 +207,6 @@ Remaining work is tracked in [`todo.md`](todo.md).
 
 ## Credits
 
-Built by **kimzam** to restore the Opera feel to Brave.
+Built by **kimzam** to restore the Opera feel to browser of your choice.
 
 Licence not yet chosen — add one before publishing.

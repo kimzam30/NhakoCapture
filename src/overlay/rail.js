@@ -57,7 +57,11 @@
     return g;
   }
 
-  function create({ layer, view, annotate, ops, actions }) {
+  /* `bounds` is the region the rail may occupy, in stage-local CSS pixels.
+   * It defaults to the stage itself; the fallback window widens it into the
+   * margin around the letterboxed capture. */
+  function create({ layer, view, annotate, ops, actions, bounds }) {
+    const limit = bounds ?? { top: 0, bottom: view.height, left: 0, right: view.width };
     const rail = document.createElement('div');
     rail.className = 'nc-rail';
     rail.hidden = true;
@@ -164,20 +168,20 @@
       const above = rect.y - GAP - box.height;
 
       let top;
-      if (below + box.height <= view.height) top = below;
+      if (below + box.height <= limit.bottom) top = below;
       /* `reservedTop` is the bottom of the command pill. Without it a tall
        * frame pushes the rail up into the pill and the two overlap. */
-      else if (above >= reservedTop) top = above;
+      else if (above >= Math.max(limit.top, reservedTop)) top = above;
       else {
-        // Frame is taller than the viewport allows: sit on its bottom edge,
-        // dimmed until pointed at, rather than shoved offscreen.
-        top = Math.max(0, view.height - box.height - GAP);
+        // Frame leaves no room either side: sit on its bottom edge, dimmed
+        // until pointed at, rather than shoved out of reach.
+        top = Math.max(limit.top, limit.bottom - box.height - GAP);
         rail.classList.add('is-overlaid');
       }
 
       const left = Math.min(
-        Math.max(GAP, rect.x + rect.w / 2 - box.width / 2),
-        Math.max(GAP, view.width - box.width - GAP)
+        Math.max(limit.left + GAP, rect.x + rect.w / 2 - box.width / 2),
+        Math.max(limit.left + GAP, limit.right - box.width - GAP)
       );
       rail.style.top = `${top}px`;
       rail.style.left = `${left}px`;

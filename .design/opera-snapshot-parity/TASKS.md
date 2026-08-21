@@ -149,14 +149,22 @@ phase, not per task.
 
 ## Restricted pages — Phase 6
 
-- [ ] **T16 · Fallback editor rebuilt on the shared engine**: `src/fallback/`
+- [~] **T16 · Fallback editor rebuilt on the shared engine**: `src/fallback/`
       popup gets the same `engine/` tools so `brave://` pages get an identical
       tool set. _Modifies `src/fallback/editor.html|.js`; retires the re-entrant
       `img.onload → img.src = canvas.toDataURL()` trick at `editor.js:37`._
+      **Built.** Composition, not duplication: the same stage, selection,
+      annotation engine and rail, with three new options — `box` (letterbox the
+      capture), `clip: false` (let the toolbars sit in the margin) and `origin`
+      (map window coordinates into stage-local ones). Exercised in a real
+      browser from `file://` with chrome shimmed.
 
-- [ ] **T17 · Denial notice**: when even `captureVisibleTab` is refused, say so
+- [~] **T17 · Denial notice**: when even `captureVisibleTab` is refused, say so
       in a toast instead of failing silently as v1 does. Covers: injection
       blocked, capture blocked, debugger attach refused. _New._
+      **Built.** The capture now always happens first, so a page that merely
+      blocks *injection* keeps its screenshot and opens the editor window
+      instead. Only a refused capture is a dead end, and that badges a reason.
 
 ## Responsive & Polish — Phase 7
 

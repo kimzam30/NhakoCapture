@@ -62,6 +62,9 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     offscreen: {
       createDocument: async (...a) => { calls.push({ name: 'createDocument', args: a }); },
     },
+    storage: { local: { set: async (...a) => { calls.push({ name: 'storage.set', args: a }); },
+                        remove: async () => {} } },
+    windows: { create: async (...a) => { calls.push({ name: 'windows.create', args: a }); return { id: 9 }; } },
     debugger: {
       attach: async (...a) => {
         calls.push({ name: 'debugger.attach', args: a });
@@ -90,7 +93,10 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     return { ok: true, text: async () => `/* ${url} */` };
   };
 
-  const sandbox = { chrome, fetch, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout, clearTimeout, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
+  // createImageBitmap is used to size the fallback window to the capture.
+  const createImageBitmap = async () => ({ width: 1280, height: 720, close() {} });
+
+  const sandbox = { chrome, fetch, createImageBitmap, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout, clearTimeout, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
   sandbox.globalThis = sandbox;
   createContext(sandbox);
   runInContext(readFileSync(join(root, 'src/background.js'), 'utf8'), sandbox);
@@ -155,16 +161,56 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('injection BEFORE handoff', iInject < iHandoff);
 }
 
-/* --- restricted page: never captures, reports instead -------------------- */
+/* --- restricted page: capture still happens, editing moves to a window ---- */
 {
   const { listeners, names, calls } = loadBackground();
   await listeners.action({ id: 1, windowId: 2, url: 'brave://settings' });
   const seq = names();
-  ok('no capture attempted on a restricted page', !seq.includes('captureVisibleTab'));
+  ok('the capture is still attempted', seq.includes('captureVisibleTab'));
   ok('no injection attempted on a restricted page', !seq.includes('executeScript'));
-  ok('badge raised instead', seq.includes('setBadgeText'));
+  ok('the fallback editor window is opened', seq.includes('windows.create'));
+  ok('the capture is handed over through storage', seq.includes('storage.set'));
+  ok('capture is stored BEFORE the window opens',
+    seq.indexOf('storage.set') < seq.indexOf('windows.create'));
+  const win = calls.find((c) => c.name === 'windows.create');
+  eq('opens as a popup', win.args[0].type, 'popup');
+  ok('pointing at the fallback editor', /src\/fallback\/editor\.html$/.test(win.args[0].url));
+  ok('sized within sane bounds',
+    win.args[0].width >= 720 && win.args[0].width <= 1400 &&
+    win.args[0].height >= 520 && win.args[0].height <= 900,
+    `${win.args[0].width}x${win.args[0].height}`);
+}
+
+/* --- capture refused outright: nothing to fall back to, so say so --------- */
+{
+  const { listeners, names, calls } = loadBackground({ captureFails: true });
+  await listeners.action({ id: 1, windowId: 2, url: 'brave://settings' });
+  const seq = names();
+  ok('no editor window when there is no capture', !seq.includes('windows.create'));
+  ok('the user is told', seq.includes('setBadgeText'));
   const badge = calls.filter((c) => c.name === 'setBadgeText').pop();
   eq('badge shows a marker', badge.args[0].text, '!');
+}
+
+/* --- injectable-looking page that rejects injection ----------------------- */
+{
+  const { listeners, names } = loadBackground({ injectFails: true });
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  const seq = names();
+  ok('injection was attempted', seq.includes('executeScript'));
+  ok('and the capture is not thrown away -- the editor window opens',
+    seq.includes('windows.create'));
+}
+
+/* --- overlay injected but never answered ---------------------------------- */
+{
+  const { listeners, names } = loadBackground();
+  // make the handoff fail
+  const bg = loadBackground();
+  bg.sandbox.chrome.tabs.sendMessage = async () => { throw new Error('no receiving end'); };
+  await bg.listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  ok('a silent overlay also falls back to the window',
+    bg.names().includes('windows.create'));
 }
 
 /* --- capture denied: does not go on to inject ---------------------------- */
@@ -177,13 +223,12 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('failure reported', seq.includes('setBadgeText'));
 }
 
-/* --- injection denied: does not go on to hand off ------------------------ */
+/* --- injection denied: no handoff, but the capture survives -------------- */
 {
   const { listeners, names } = loadBackground({ injectFails: true });
   await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
   const seq = names();
   ok('handoff skipped after a failed injection', !seq.includes('tabs.sendMessage'));
-  ok('failure reported', seq.includes('setBadgeText'));
 }
 
 /* --- injection order ------------------------------------------------------ */

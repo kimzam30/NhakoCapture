@@ -499,6 +499,117 @@ async function main() {
     check('hint text collapses below 640px', labelsHidden.hint === 'none');
     await shoot(cdp, '04-narrow');
 
+    /* --- fallback editor window -------------------------------------------
+     * The brave:// path. Loaded from file:// with chrome.storage, runtime and
+     * fetch shimmed, so the same modules can be exercised outside an installed
+     * extension. Everything below the shim is the real editor.
+     */
+    {
+      // The narrow-window test left a device-metrics override in place.
+      await cdp.send('Emulation.clearDeviceMetricsOverride');
+      await sleep(300);
+      await cdp.send('Page.navigate', { url: PAGE });
+      await sleep(1000);
+      const capture = 'data:image/png;base64,' +
+        (await cdp.send('Page.captureScreenshot', { format: 'png' })).data;
+      const css = STYLES.map(read).join('\n');
+
+      const shim = `
+        globalThis.__sent = [];
+        globalThis.chrome = {
+          storage: { local: {
+            get: async () => ({ capturedImage: ${JSON.stringify(capture)} }),
+            remove: async () => {},
+          }},
+          runtime: {
+            getURL: (p) => 'nc-style:' + p,
+            sendMessage: async (m) => { globalThis.__sent.push(m); return { ok: true }; },
+          },
+        };
+        const realFetch = globalThis.fetch;
+        globalThis.fetch = async (u) => String(u).startsWith('nc-style:')
+          ? { ok: true, text: async () => ${JSON.stringify(css)} }
+          : realFetch(u);
+      `;
+      const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: shim });
+
+      await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+      await sleep(900);
+
+      const mounted = await cdp.eval(`(() => {
+        const h = document.getElementById('nhako-capture-host');
+        const sr = h && h.shadowRoot;
+        const box = h && h.getBoundingClientRect();
+        return {
+          host: !!h,
+          empty: getComputedStyle(document.getElementById('empty')).display,
+          rail: !!(sr && sr.querySelector('.nc-rail')),
+          tools: sr ? sr.querySelectorAll('.nc-tool').length : -1,
+          box: box && { l: Math.round(box.left), t: Math.round(box.top), w: Math.round(box.width), h: Math.round(box.height) },
+          pillButtons: sr ? [...sr.querySelectorAll('.nc-btn')].map(b => b.getAttribute('aria-label')) : [],
+        };
+      })()`);
+
+      check('fallback editor mounts the shared stage', mounted.host, JSON.stringify(mounted));
+      check('the empty-state notice stays hidden', mounted.empty === 'none');
+      check('it reuses the same tool rail', mounted.rail && mounted.tools === 8, String(mounted.tools));
+      check('the capture is letterboxed inside the window',
+        mounted.box && mounted.box.w > 0 && mounted.box.h > 0 &&
+        mounted.box.l >= 0 && mounted.box.t >= 0, JSON.stringify(mounted.box));
+      check('no "Capture full screen" here — the capture IS the frame',
+        !mounted.pillButtons.includes('Capture full screen'), JSON.stringify(mounted.pillButtons));
+      check('no "Save page as PDF" here — there is no live tab to print',
+        !mounted.pillButtons.includes('Save page as PDF'));
+
+      const framed = await cdp.eval(`JSON.stringify(NhakoCapture.require('selection') && (() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const m = sr.querySelector('.nc-marquee');
+        return !m.hidden;
+      })())`);
+      check('the whole capture is framed on open', framed === 'true', framed);
+
+      /* draw with the shared engine, in stage-local coordinates */
+      const box = mounted.box;
+      await shadowEval(cdp, `[...sr.querySelectorAll('.nc-tool')].find(b => b.getAttribute('aria-label') === 'Arrow').click();`);
+      await sleep(150);
+      await drag(cdp,
+        [box.l + Math.round(box.w * 0.25), box.t + Math.round(box.h * 0.6)],
+        [box.l + Math.round(box.w * 0.55), box.t + Math.round(box.h * 0.35)]);
+      await sleep(250);
+      const drawn = await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        return sr.querySelector('.nc-annotate') && !sr.querySelector('.nc-annotate').hidden;
+      })()`);
+      check('annotation works in the fallback window', drawn);
+
+      const chromeFits = await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const rail = sr.querySelector('.nc-rail');
+        const pill = sr.querySelector('.nc-pill');
+        const r = rail.getBoundingClientRect(), p = pill.getBoundingClientRect();
+        return { overlaid: rail.classList.contains('is-overlaid'),
+                 railInView: r.top >= 0 && r.bottom <= innerHeight,
+                 collide: Math.min(p.bottom, r.bottom) - Math.max(p.top, r.top) > 0 };
+      })()`);
+      check('the rail sits at full opacity, not dimmed, in the fallback window',
+        !chromeFits.overlaid, JSON.stringify(chromeFits));
+      check('and stays inside the window without colliding with the pill',
+        chromeFits.railInView && !chromeFits.collide, JSON.stringify(chromeFits));
+      check('the pill is not dimmed — it sits in the margin, not over the capture',
+        (await shadowEval(cdp, `return getComputedStyle(sr.querySelector('.nc-pill')).opacity;`)) === '1',
+        await shadowEval(cdp, `return getComputedStyle(sr.querySelector('.nc-pill')).opacity;`));
+
+      await shoot(cdp, '07-fallback-editor');
+
+      await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+      await sleep(300);
+      const sentFromFallback = await cdp.eval(`globalThis.__sent.map(m => m.type)`);
+      check('Copy from the fallback window routes to the background',
+        sentFromFallback.includes('nc:copy'), JSON.stringify(sentFromFallback));
+
+      await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+    }
+
     /* --- README hero -------------------------------------------------------
      * Opt-in, because it writes into the repo rather than the scratch dir. The
      * README shows the actual product, rendered by the actual code -- not a
@@ -545,7 +656,11 @@ async function main() {
   } finally {
     try { cdp?.close(); } catch {}
     child.kill('SIGKILL');
-    rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    // Chromium can still be flushing its profile as we exit; a failure to tidy
+    // a temp directory must not fail the run.
+    try {
+      rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    } catch { /* leave it for the OS */ }
   }
 }
 
