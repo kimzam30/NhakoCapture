@@ -1,147 +1,133 @@
-//nhakocapture by kimzam
+/* NhakoCapture — overlay entry point
+ *
+ * Owns the overlay lifecycle: receives the bitmap the background captured
+ * before we existed, measures it, and hands off to the renderer.
+ *
+ * Phase 2 establishes the lifecycle only. render() is a seam that Phase 3 (T4)
+ * fills with the shadow host, frozen backdrop and scrim; everything around it
+ * -- handoff, measurement, re-injection, teardown -- is final.
+ */
+(() => {
+  'use strict';
 
+  const NC = globalThis.NhakoCapture;
+  if (!NC) return;
 
-if (!document.getElementById("brave-snap-overlay")) {
-  
-  const overlay = document.createElement("div");
-  overlay.id = "brave-snap-overlay";
-  overlay.style.cssText = `
-    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
-    background: rgba(0, 0, 0, 0.6); z-index: 2147483647;
-    display: flex; justify-content: center; align-items: flex-start; padding-top: 30px;
-    backdrop-filter: blur(3px); font-family: sans-serif;
-  `;
+  const geometry = NC.require('geometry');
 
-  const btnContainer = document.createElement("div");
-  btnContainer.style.cssText = "display: flex; gap: 15px;";
-
-const createBtn = (svgCode, text, bgColor) => {
-    const btn = document.createElement("button");
-    
-    btn.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 8px;">
-        ${svgCode}
-        <span>${text}</span>
-      </div>
-    `;
-    
-    btn.style.cssText = `
-      background: ${bgColor}; color: white; border: none; padding: 10px 18px;
-      border-radius: 6px; font-size: 14px; font-weight: bold; cursor: pointer;
-      box-shadow: 0 4px 10px rgba(0,0,0,0.3); transition: transform 0.1s;
-    `;
-    
-    const svg = btn.querySelector("svg");
-    if (svg) {
-      svg.style.width = "18px";
-      svg.style.height = "18px";
-      svg.style.stroke = "currentColor"; 
+  /* Re-entry. Pressing Ctrl+Shift+5 while an overlay is already up re-runs every
+   * injected file. Without this, a second overlay stacks on the first and the
+   * first one's listeners are orphaned -- which is exactly the leak v1 has, one
+   * abandoned keydown handler per invocation. */
+  if (NC.reinjected) {
+    NC.reinjected = false;
+    try {
+      NC.destroy?.();
+    } catch (err) {
+      console.warn('[NhakoCapture] teardown before relaunch failed:', err);
     }
+  }
 
-    btn.onmouseover = () => btn.style.transform = "scale(1.05)";
-    btn.onmouseout = () => btn.style.transform = "scale(1)";
-    return btn;
-  };
-
-  const cameraIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-camera"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></svg>`;
-  const cropIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-crop"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>`;
-  const cancelIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`;
-
-  const captureBtn = createBtn(cameraIcon, "Capture Visible Page", "#8a2be2");
-  const cropBtn = createBtn(cropIcon, "Crop Selection", "#8a2be2");
-  const cancelBtn = createBtn(cancelIcon, "Cancel", "#555555");
-
-  btnContainer.append(captureBtn, cropBtn, cancelBtn);
-  overlay.appendChild(btnContainer);
-
-  let isCropping = false;
-  let startX, startY;
-  let selectionBox = null;
-
-  cropBtn.onclick = () => {
-    isCropping = true;
-    btnContainer.style.display = "none"; 
-    overlay.style.background = "transparent"; 
-    overlay.style.backdropFilter = "none"; 
-    overlay.style.cursor = "crosshair";
-  };
-
-  overlay.onmousedown = (e) => {
-    if (!isCropping) return;
-    startX = e.clientX;
-    startY = e.clientY;
-
-    selectionBox = document.createElement("div");
-    selectionBox.style.cssText = `
-      position: fixed; border: 2px solid #8a2be2;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.5); 
-      z-index: 2147483648; pointer-events: none;
-    `;
-    document.body.appendChild(selectionBox);
-    updateBox(e);
-  };
-
-  overlay.onmousemove = (e) => {
-    if (!isCropping || !selectionBox) return;
-    updateBox(e);
-  };
-
-  const updateBox = (e) => {
-    const x = Math.min(startX, e.clientX);
-    const y = Math.min(startY, e.clientY);
-    const w = Math.abs(e.clientX - startX);
-    const h = Math.abs(e.clientY - startY);
-    selectionBox.style.left = x + "px";
-    selectionBox.style.top = y + "px";
-    selectionBox.style.width = w + "px";
-    selectionBox.style.height = h + "px";
-  };
-
-  overlay.onmouseup = (e) => {
-    if (!isCropping || !selectionBox) return;
-    isCropping = false;
-
-    const rect = {
-      x: Math.min(startX, e.clientX),
-      y: Math.min(startY, e.clientY),
-      w: Math.abs(e.clientX - startX),
-      h: Math.abs(e.clientY - startY)
+  /* Everything that must be undone on teardown is registered here, so destroy()
+   * cannot drift out of sync with what start() set up. */
+  function createCleanup() {
+    const tasks = [];
+    return {
+      add(fn) { tasks.push(fn); },
+      listen(target, type, handler, opts) {
+        target.addEventListener(type, handler, opts);
+        tasks.push(() => target.removeEventListener(type, handler, opts));
+      },
+      runAll() {
+        while (tasks.length) {
+          const fn = tasks.pop();
+          try { fn(); } catch (err) {
+            console.warn('[NhakoCapture] cleanup step failed:', err);
+          }
+        }
+      },
     };
+  }
 
-    selectionBox.remove();
-    overlay.remove();
+  let session = null;
 
-    if (rect.w > 10 && rect.h > 10) {
-      setTimeout(() => {
-        chrome.runtime.sendMessage({ 
-          action: "take_screenshot", 
-          cropRect: rect, 
-          // Grab the exact window size for perfect math later
-          innerWidth: window.innerWidth,
-          innerHeight: window.innerHeight
-        });
-      }, 200); 
-    }
-  };
+  function decode(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('captured bitmap failed to decode'));
+      img.src = dataUrl;
+    });
+  }
 
-  captureBtn.onclick = () => {
-    overlay.remove();
-    setTimeout(() => {
-      chrome.runtime.sendMessage({ 
-        action: "take_screenshot",
-        innerWidth: window.innerWidth,
-        innerHeight: window.innerHeight
-      });
-    }, 200); 
-  };
+  async function start(dataUrl) {
+    if (session) destroy();
 
-  cancelBtn.onclick = () => overlay.remove();
-  document.body.appendChild(overlay);
-}
+    const bitmap = await decode(dataUrl);
 
-document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape") {
-      if (selectionBox) selectionBox.remove();
-      if (overlay) overlay.remove();
-    }
-  });
+    /* Measured from the bitmap we actually received rather than read from
+     * devicePixelRatio: browser zoom lands on fractional ratios and the
+     * compositor rounds, so the real numbers are the only trustworthy ones. */
+    const metrics = geometry.measure(
+      bitmap.naturalWidth,
+      bitmap.naturalHeight,
+      window.innerWidth,
+      window.innerHeight
+    );
+
+    const cleanup = createCleanup();
+    session = { bitmap, metrics, cleanup };
+
+    /* Scroll lock. The backdrop is a still image, so any scroll underneath it
+     * would silently desync the overlay from the page it depicts. */
+    const scroll = { x: window.scrollX, y: window.scrollY };
+    const prevOverflow = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = 'hidden';
+    cleanup.add(() => {
+      document.documentElement.style.overflow = prevOverflow;
+      window.scrollTo(scroll.x, scroll.y);
+    });
+
+    NC.destroy = destroy;
+    render(session, cleanup);
+    return metrics;
+  }
+
+  /* Phase 3 (T4) replaces this body with the shadow host, backdrop and scrim.
+   * The signature is the contract. */
+  function render(_session, _cleanup) {
+    console.info(
+      '[NhakoCapture] captured %d×%d device px from a %d×%d viewport ' +
+      '(scaleX %s, scaleY %s) — overlay UI lands in Phase 3',
+      _session.metrics.bitmapWidth, _session.metrics.bitmapHeight,
+      _session.metrics.cssWidth, _session.metrics.cssHeight,
+      _session.metrics.scaleX.toFixed(4), _session.metrics.scaleY.toFixed(4)
+    );
+  }
+
+  function destroy() {
+    if (!session) return;
+    session.cleanup.runAll();
+    session = null;
+    NC.destroy = null;
+  }
+
+  NC.define('overlay', { start, destroy, get session() { return session; } });
+
+  /* One listener for the lifetime of the isolated world -- registered once,
+   * outside start(), so repeated invocations cannot stack handlers. */
+  if (!NC.modules.__listening) {
+    NC.define('__listening', true);
+    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+      if (msg?.type !== 'nc:start') return false;
+      start(msg.dataUrl).then(
+        (metrics) => sendResponse({ ok: true, metrics }),
+        (err) => {
+          console.error('[NhakoCapture] start failed:', err);
+          sendResponse({ ok: false, error: String(err) });
+        }
+      );
+      return true;
+    });
+  }
+})();

@@ -8,6 +8,11 @@ Aesthetic direction is **functional browser chrome (Swiss / utilitarian)** and i
 established in the first Core UI task, T4, so the look can be judged before
 anything is built on top of it.
 
+**Status legend.** `[ ]` not started · `[~]` built, unit-tested, but its "done
+when" needs a browser · `[x]` verified. Nothing reaches `[x]` until it has run
+in Brave — every task here has a runtime acceptance test, so passing unit tests
+is evidence, not closure.
+
 Ordering is risk-first. T3 and T5 are the two tasks that can invalidate the
 architecture — the clipboard path and the frozen-backdrop maths — so they come
 before the UI that would otherwise have to be rebuilt around them.
@@ -17,21 +22,24 @@ phase, not per task.
 
 ## Foundation — Phase 2
 
-- [ ] **T1 · Capture-first orchestration**: rewrite `src/background.js` so the
+- [~] **T1 · Capture-first orchestration**: rewrite `src/background.js` so the
       action handler captures `captureVisibleTab` *before* injecting anything,
       then injects the overlay files in order and hands over
       `{dataUrl, dpr, innerWidth, innerHeight}`. Done when a `console.log` in
       the content script receives a bitmap whose width equals
       `innerWidth × devicePixelRatio`. _Replaces v1's inject-then-hide-then-
       capture flow and its `setTimeout(…, 200)` race._
+      **Built.** Ordering invariant is mechanically tested — `tools/test-background.mjs`
+      asserts `captureVisibleTab` precedes `executeScript` precedes the handoff,
+      and that a failure at either step stops the chain.
 
-- [ ] **T2 · Module namespace + injection order**: establish
+- [~] **T2 · Module namespace + injection order**: establish
       `globalThis.NhakoCapture` as the single namespace every overlay file
       attaches to, since `executeScript({files})` cannot use ES modules. Done
       when three stub files injected in sequence can call into each other.
       _New. No bundler — the zero-dependency claim in the README stays true._
 
-- [ ] **T3 · Offscreen clipboard + download path** _(risk-first)_: offscreen
+- [~] **T3 · Offscreen clipboard + download path** _(risk-first)_: offscreen
       document with `reason: CLIPBOARD`; `writeImage(blob)` and
       `downloadImage(blob, filename)` using `URL.createObjectURL` and
       `chrome.downloads.download({saveAs: true})`. Done when a hardcoded test
@@ -40,6 +48,11 @@ phase, not per task.
       proves the architecture: a content script's `navigator.clipboard.write`
       runs in the page's origin and is blocked on plain HTTP, and v1's
       `<a download>` is why Save has no picker._
+      **Built, and the riskiest thing outstanding.** The clipboard path has two
+      rungs — `navigator.clipboard.write` for a true `image/png` flavour, then a
+      `copy`-event HTML fallback that pastes into chat and docs but not image
+      editors. Which rung actually fires in an offscreen document is *unproven*;
+      the response reports `via` so the first real run settles it.
 
 ## Core UI — Phase 3
 

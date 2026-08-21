@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>NhakoCapture offscreen worker</title>
+<!-- Never rendered. Exists because a service worker has neither the Clipboard
+     API nor URL.createObjectURL, and a content script on an http:// page is not
+     a secure context so navigator.clipboard is undefined there. This document
+     is an extension-origin DOM context that has both. -->
+<body>
+  <script src="offscreen.js"></script>
+</body>
