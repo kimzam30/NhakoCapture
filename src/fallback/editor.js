@@ -65,21 +65,41 @@
   };
 
   async function main() {
-    const stored = await chrome.storage.local.get(['capturedImage']);
+    const KEYS = ['capturedImage', 'captureBlobUrl', 'captureCapped'];
+    const stored = await chrome.storage.local.get(KEYS);
     // One-shot: the capture is consumed so reopening this window cannot resurrect
     // a screenshot the user thought they had dismissed.
-    await chrome.storage.local.remove(['capturedImage']);
+    await chrome.storage.local.remove(KEYS);
 
-    if (!stored.capturedImage) {
+    /* Two populations arrive here now. A restricted-page capture is a data URL
+     * held in storage; a full-page capture is a blob URL, because the stitched
+     * image would not fit in storage's quota. Everything downstream is
+     * identical -- an <img> does not care which kind of URL it was given. */
+    const source = stored.capturedImage ?? stored.captureBlobUrl;
+    if (!source) {
       document.getElementById('empty').style.display = 'flex';
       return;
     }
 
     const [bitmap, cssText] = await Promise.all([
-      decode(stored.capturedImage),
+      decode(source),
       Promise.all(STYLES.map((p) => fetch(chrome.runtime.getURL(p)).then((r) => r.text())))
         .then((parts) => parts.join('\n')),
     ]);
+
+    /* Now, and not a moment earlier: the blob is what the <img> was decoded
+     * from, and revoking before that lands would leave the window empty. It is
+     * revoked in the offscreen document that created it -- a blob URL cannot
+     * be revoked from anywhere else -- and dropping it promptly matters
+     * because it pins the whole stitched PNG in memory until it goes.
+     *
+     * `captureCapped` is read out of storage with the rest of the one-shot and
+     * is consumed by T11, which states the cap in the pill. */
+    if (stored.captureBlobUrl) {
+      chrome.runtime
+        .sendMessage({ type: 'nc:capture-consumed', url: stored.captureBlobUrl })
+        .catch(() => { /* worker asleep; the URL dies with the document */ });
+    }
 
     const box = fit(bitmap);
     const metrics = geometry.measure(
@@ -143,7 +163,7 @@
       // Lift the pill into the margin above the capture.
       top: -(CHROME.top - 16),
       actions: {
-        /* No captureFullScreen: the whole capture IS the frame here, so
+        /* No captureVisiblePage: the whole capture IS the frame here, so
          * offering it would be a button that selects everything. No savePdf
          * either -- there is no live tab behind this window to print. */
         cancel: () => window.close(),
@@ -153,6 +173,26 @@
     rail.init();
     // The whole capture, framed, so the window is immediately useful.
     selection.selectAll();
+
+    /* A capped capture is not the page. Say so, in the pill, before the user
+     * has done anything with it -- and keep saying it, because `selectAll`
+     * above has already overwritten the hint and the first copy will overwrite
+     * it again.
+     *
+     * The height quoted is the one this image actually has, not the constant
+     * it was clamped against: the last tile can stop a little short, and
+     * quoting a round number the image does not match would be a smaller lie
+     * of the same kind this notice exists to prevent.
+     *
+     * Deferred a frame so the live region is in the tree before its text
+     * changes, which is what makes it announce. */
+    if (stored.captureCapped === true) {
+      requestAnimationFrame(() => {
+        toolbar.setNotice(
+          `Full page capped at ${bitmap.naturalHeight}px — page is longer`
+        );
+      });
+    }
 
     cleanup.listen(stage.root, 'pointerdown', (e) => {
       if (e.button !== 0) return;
@@ -215,6 +255,10 @@
       }
 
       if (res?.ok) {
+        /* Same reasoning as the overlay: the degraded result goes to the
+         * notice, which survives the narrow-window collapse that hides the
+         * hint, and this window closes 1.6s later. */
+        if (res.degraded) toolbar.setNotice('Copied as HTML');
         toolbar.setHint(res.degraded ? (res.note ?? 'Copied (as HTML)')
                                      : (action === 'copy' ? 'Copied!' : 'Saved'));
         setTimeout(() => window.close(), res.degraded ? 1600 : 600);

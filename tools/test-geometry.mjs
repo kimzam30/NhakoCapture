@@ -31,6 +31,8 @@ function eq(label, actual, expected) {
   else failures.push(`${label}\n      expected ${e}\n      actual   ${a}`);
 }
 
+const ok = (label, cond) => eq(label, !!cond, true);
+
 function throws(label, fn) {
   try {
     fn();
@@ -150,6 +152,137 @@ eq('fullViewport is the whole bitmap',
   G.fullViewport(dpr2), { x: 0, y: 0, w: 2560, h: 1440 });
 
 /* --- report -------------------------------------------------------------- */
+/* --- full-page: the scroll plan ------------------------------------------ */
+{
+  const P = (d, v, m = Infinity) => G.planStops(d, v, m);
+
+  eq('exact multiple: three stops, no redundant fourth', P(2700, 900), [0, 900, 1800]);
+  eq('non-multiple: last stop clamped to the end of the page', P(2500, 900), [0, 900, 1600]);
+  eq('shorter than the viewport: a single stop', P(400, 900), [0]);
+  eq('exactly one viewport: a single stop', P(900, 900), [0]);
+  eq('one pixel taller: a second, heavily overlapping stop', P(901, 900), [0, 1]);
+  eq('ceiling truncates the plan', P(90000, 900, 2700), [0, 900, 1800]);
+
+  /* The clamped final stop overlaps its predecessor on purpose. If it were a
+     full step instead, it would ask for a scroll the page cannot perform and
+     the tile would silently repeat the one before it. */
+  const stops = P(2500, 900);
+  ok('final stop overlaps rather than overshoots',
+     stops.at(-1) < stops.at(-2) + 900 && stops.at(-1) === 1600);
+
+  throws('a zero-height viewport is refused, not divided by', () => P(2700, 0));
+}
+
+/* --- full-page: the ceiling ---------------------------------------------- */
+{
+  eq('ceiling at 1x', G.heightCeiling(1), 16384);
+  eq('ceiling at 2x is half the CSS height', G.heightCeiling(2), 8192);
+  eq('ceiling at 1.5x', G.heightCeiling(1.5), 10922);
+  eq('a nonsense scale does not divide by zero', G.heightCeiling(0), 16384);
+
+  const under = G.planFullPage({ docHeight: 5000, viewHeight: 900, scaleY: 1 });
+  ok('a normal page is not capped', under.capped === false);
+  eq('and keeps its full height', under.cssHeight, 5000);
+
+  const over = G.planFullPage({ docHeight: 40000, viewHeight: 900, scaleY: 1 });
+  ok('an over-tall page is capped', over.capped === true);
+  eq('capped to the ceiling', over.cssHeight, 16384);
+  eq('the true height is still reported', over.fullCssHeight, 40000);
+  ok('the plan stops at the cap', over.stops.at(-1) + 900 <= 16384 + 900);
+
+  const retina = G.planFullPage({ docHeight: 12000, viewHeight: 900, scaleY: 2 });
+  ok('dpr is applied to the ceiling', retina.capped === true);
+  eq('capped to half the CSS height', retina.cssHeight, 8192);
+
+  /* The ceiling must be decided from measurements, before any allocation --
+     Chromium answers an oversized canvas with a blank one rather than an
+     error, and finding that out afterwards discards a capture the user
+     already waited for. */
+  ok('capped is known from the plan alone', typeof over.capped === 'boolean');
+}
+
+/* --- full-page: turning observed tiles into draws ------------------------- */
+{
+  const T = (y) => ({ y, width: 1200, height: 900 });
+
+  {
+    const p = G.planStitch([T(0), T(900), T(1800)], { scaleY: 1, cssHeight: 2700 });
+    eq('exact multiple: canvas is the document', [p.width, p.height], [1200, 2700]);
+    eq('one draw per tile', p.draws.length, 3);
+    eq('tiles land at their offsets', p.draws.map((d) => d.dstY), [0, 900, 1800]);
+    ok('every tile drawn whole', p.draws.every((d) => d.srcH === 900));
+  }
+
+  {
+    // The clamped final tile overlaps. It must be drawn whole, at its own
+    // offset -- the overlap rewrites identical pixels, which is the point.
+    const p = G.planStitch([T(0), T(900), T(1600)], { scaleY: 1, cssHeight: 2500 });
+    eq('non-multiple: canvas is the document', p.height, 2500);
+    eq('overlapping tile keeps its offset', p.draws.at(-1).dstY, 1600);
+    eq('and is drawn in full', p.draws.at(-1).srcH, 900);
+    eq('bottom edge lands exactly on the document end',
+       p.draws.at(-1).dstY + p.draws.at(-1).srcH, 2500);
+  }
+
+  {
+    // A page shorter than the viewport: the tile contains 400px of document
+    // and 500px of whatever the browser paints under a short body.
+    const p = G.planStitch([T(0)], { scaleY: 1, cssHeight: 400 });
+    eq('short page: canvas is the document, not the tile', p.height, 400);
+    eq('the tile is cropped, not stretched', p.draws[0].srcH, 400);
+    eq('source and destination heights agree', p.draws[0].dstH, p.draws[0].srcH);
+  }
+
+  {
+    // A page that refused to scroll claims 2700px but only ever gave us one
+    // tile. Trusting the document would leave 1800px of blank canvas.
+    const p = G.planStitch([T(0)], { scaleY: 1, cssHeight: 2700 });
+    eq('frozen page: canvas is what the tiles cover', p.height, 900);
+    eq('no blank strip below', p.draws[0].dstY + p.draws[0].srcH, 900);
+  }
+
+  {
+    /* Tile width/height are DEVICE pixels, so at 2x a 900px CSS viewport
+       arrives as an 1800px-tall bitmap. Passing 900 here instead is what a
+       caller who confused the two spaces would do, and the case below asserts
+       that planStitch refuses to invent the missing half rather than
+       stretching to the height the document claims. */
+    const R = (y) => ({ y, width: 2400, height: 1800 });
+    const p = G.planStitch([R(0), R(900)], { scaleY: 2, cssHeight: 1800 });
+    eq('dpr scales the canvas', [p.width, p.height], [2400, 3600]);
+    eq('and the offsets', p.draws.map((d) => d.dstY), [0, 1800]);
+    ok('tiles are drawn at device size', p.draws.every((d) => d.srcH === 1800));
+  }
+
+  {
+    // Tiles that do not cover what the document claims are never stretched to
+    // fill it. A short canvas is honest; a stretched one is a lie at every
+    // pixel.
+    const p = G.planStitch([T(0), T(900)], { scaleY: 2, cssHeight: 1800 });
+    eq('under-covering tiles shrink the canvas rather than stretch',
+       p.height, 2700);
+    ok('and are still drawn at their own size',
+       p.draws.every((d) => d.srcH === d.dstH));
+  }
+
+  {
+    // Tiles past the ceiling are dropped rather than drawn off-canvas.
+    const tall = [];
+    for (let y = 0; y < 20000; y += 900) tall.push(T(y));
+    const p = G.planStitch(tall, { scaleY: 1, cssHeight: 16384 });
+    eq('canvas never exceeds the ceiling', p.height, 16384);
+    ok('no draw starts past the ceiling', p.draws.every((d) => d.dstY < 16384));
+    ok('no draw ends past the ceiling',
+       p.draws.every((d) => d.dstY + d.srcH <= 16384));
+    ok('the last tile is cropped to fit', p.draws.at(-1).srcH < 900);
+  }
+
+  {
+    throws('stitching nothing is refused',
+           () => G.planStitch([], { scaleY: 1, cssHeight: 900 }));
+  }
+}
+
 console.log(`\ngeometry: ${pass} passed, ${failures.length} failed\n`);
 if (failures.length) {
   for (const f of failures) console.error('  FAIL  ' + f);

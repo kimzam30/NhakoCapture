@@ -170,6 +170,22 @@
 }
 
 /* --- buttons -------------------------------------------------------------- */
+/* The cap notice: a statement about what the capture IS, not guidance about
+   what to do with it. Coloured rather than sharing the hint's muted grey,
+   because the content hierarchy ranks it above the toolset -- it changes what
+   the user believes they are holding. Truncates rather than wrapping: a pill
+   that grows to two lines shifts everything under it. */
+.nc-notice {
+  color: var(--nc-notice);
+  font-size: var(--nc-text-base);
+  font-weight: var(--nc-weight-medium);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 46ch;
+}
+.nc-notice[hidden] { display: none; }
+
 .nc-btn {
   display: inline-flex;
   align-items: center;
@@ -192,6 +208,20 @@
 
 .nc-btn:hover { background: var(--nc-surface-raised); }
 .nc-btn:active { background: var(--nc-surface-sunken); }
+
+/* Colour only. `opacity` is the reflexive way to grey a control and it would
+   drag --nc-text-disabled back under the 4.5:1 floor it was chosen to clear,
+   taking the icon and the focus ring with it. This button has to stay readable:
+   it is rendered rather than omitted precisely so it can explain itself. */
+.nc-btn.is-disabled {
+  color: var(--nc-text-disabled);
+  cursor: default;
+}
+.nc-btn.is-disabled:hover,
+.nc-btn.is-disabled:active { background: transparent; }
+
+/* The focus ring is NOT suppressed here. The control keeps its place in the
+   tab order, so it must keep the evidence that it has focus. */
 
 .nc-btn:focus-visible {
   outline: none;
@@ -409,10 +439,53 @@
 @media (max-width: 640px) {
   .nc-hint { display: none; }
   .nc-btn__label { display: none; }
+  /* ...except on Copy and Save. They are the two controls the whole overlay
+     exists to reach, and there are only two of them, so they can afford the
+     ~90px their labels cost even here. Everything else in the rail is a tool
+     whose icon is already its whole identity; these two would become a purple
+     square and a downward arrow. */
+  .nc-group--done .nc-btn__label { display: inline; }
   .nc-btn { padding: var(--nc-space-3); }
   /* The rail carries far more controls than the pill; below this width it has
      to be allowed to wrap onto a second row rather than overflow. */
   .nc-rail { justify-content: center; }
+}
+
+/* --- forced colors --------------------------------------------------------
+ *
+ * tokens.css already hands our palette back to the OS in this mode, which is
+ * right for chrome: a toolbar painted in our greys over a high-contrast desktop
+ * is an unreadable slab.
+ *
+ * It is wrong for the two controls below, where the colour IS the content.
+ * Overridden, seven ink swatches become seven identical circles and the stroke
+ * weights become indistinguishable dots -- the palette stops being a palette.
+ * `forced-color-adjust: none` is the sanctioned escape hatch for exactly this
+ * case, and it is used here and nowhere else.
+ */
+@media (forced-colors: active) {
+  .nc-swatch,
+  .nc-weight i {
+    forced-color-adjust: none;
+  }
+
+  /* box-shadow is not painted in forced-colors, so the selected-ink and
+     selected-weight rings would vanish along with it. An outline is, and it
+     sits outside the swatch rather than over the ink it is marking. */
+  .nc-swatch.is-active,
+  .nc-weight.is-active {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+
+  /* Same reason: the focus ring is a box-shadow everywhere else. */
+  .nc-btn:focus-visible,
+  .nc-tool:focus-visible,
+  .nc-swatch:focus-visible,
+  .nc-weight:focus-visible {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
 }
 
 /* --- reduced motion -------------------------------------------------------

@@ -25,6 +25,8 @@
   const annotateModule = NC.require('annotate');
   const railModule = NC.require('rail');
   const toolbarModule = NC.require('toolbar');
+  const fullpageModule = NC.require('fullpage');
+  const stitchModule = NC.require('stitch');
 
   if (NC.reinjected) {
     NC.reinjected = false;
@@ -33,6 +35,62 @@
     } catch (err) {
       console.warn('[NhakoCapture] teardown before relaunch failed:', err);
     }
+  }
+
+  /* A live region that is NOT inside the overlay.
+   *
+   * The pill's hint cannot carry announcements during a full-page capture: the
+   * overlay is hidden for the duration, and a hidden subtree is out of the
+   * accessibility tree entirely. Worse, `run()` executes synchronously up to
+   * its first await, so setting the hint and hiding the host happen in the same
+   * task -- the text is populated and removed before any screen reader could
+   * observe it. The announcement simply never happened.
+   *
+   * This element lives in the page instead, and paints nothing: clipped to
+   * nothing at 1x1, so captureVisibleTab has nothing to photograph. That is
+   * exactly the property the brief named when it left this gap open --
+   * "a channel that is both announced and un-photographable".
+   *
+   * Inline and !important throughout, because it sits in a page whose own CSS
+   * we do not control and must not be made visible by it. */
+  /* How long the announcer outlives the overlay. The last thing it says is
+   * usually said AT teardown -- "Full page captured, opening the editor" --
+   * and a live region removed in the same task as its final message is a
+   * message nobody hears. It paints nothing, so lingering costs the page
+   * nothing but the few seconds an assistive technology needs to read it. */
+  const ANNOUNCER_LINGER = 4000;
+  const ANNOUNCER_ID = 'nhako-capture-announcer';
+
+  function createAnnouncer(cleanup) {
+    /* A lingering announcer from a previous session must not stack. */
+    document.getElementById(ANNOUNCER_ID)?.remove();
+
+    const el = document.createElement('div');
+    el.id = ANNOUNCER_ID;
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-live', 'polite');
+    el.style.cssText = [
+      'position:fixed', 'left:0', 'top:0', 'width:1px', 'height:1px',
+      'margin:-1px', 'padding:0', 'border:0', 'overflow:hidden',
+      'clip-path:inset(50%)', 'white-space:nowrap', 'pointer-events:none',
+      'z-index:-1', 'contain:strict',
+    ].map((d) => d + ' !important').join(';');
+    document.documentElement.appendChild(el);
+    cleanup.add(() => {
+      // Detached on a timer rather than at teardown -- see ANNOUNCER_LINGER.
+      setTimeout(() => el.remove(), ANNOUNCER_LINGER);
+    });
+
+    return {
+      element: el,
+      /* Cleared first: an assistive technology will not re-announce a live
+       * region whose text has not changed, and "Capturing full page" twice in
+       * a row is a real case. */
+      say(text) {
+        el.textContent = '';
+        el.textContent = text;
+      },
+    };
   }
 
   function createCleanup() {
@@ -105,6 +163,9 @@
       try { previouslyFocused?.focus?.(); } catch { /* element is gone */ }
     });
 
+    const announcer = createAnnouncer(cleanup);
+    session.announcer = announcer;
+
     const stage = stageModule.mount({ bitmap, metrics, cssText }, cleanup);
     session.stage = stage;
 
@@ -162,7 +223,11 @@
     const toolbar = toolbarModule.create({
       layer: stage.layer,
       actions: {
-        captureFullScreen: () => selection.selectAll(),
+        captureVisiblePage: () => selection.selectAll(),
+        captureFullPage: () => captureFullPage(),
+        /* Evaluated once, at mount. The page is frozen under a scrim from this
+         * moment on, so its height cannot change while the pill is up. */
+        canCaptureFullPage: () => fullpageModule.hasContentBelowFold(),
         savePdf: () => savePdf(),
         cancel: () => destroy(),
       },
@@ -213,6 +278,10 @@
 
       if (event.key === 'Escape') {
         stop();
+        /* A capture in flight outranks the ladder below: the overlay is hidden
+         * and the page is scrolled somewhere the user did not put it, so Esc
+         * has exactly one sensible meaning. */
+        if (session?.capturing) { session.cancelRequested = true; return; }
         /* One step back per press, never straight out: a chosen tool releases
          * first, then the frame clears, and only then does the overlay exit. */
         if (annotate.tool) annotate.setTool(null);
@@ -250,6 +319,16 @@
      * mobile URL bar sliding away, and a window being sized during startup.
      * Tearing down the overlay on those would look like it had crashed. */
     cleanup.listen(window, 'resize', () => {
+      /* A full-page capture WILL fire this, on essentially every real page.
+       * The overlay pins the document with overflow:hidden, which removes the
+       * scrollbar and widens the viewport; the capture lifts that lock, the
+       * scrollbar comes back, and innerWidth drops by its width. That is a
+       * real size change by this test's own measure, and standing down on it
+       * would tear the overlay out from under its own capture every time.
+       *
+       * Suppressed rather than made smarter: during a capture the bitmap this
+       * guard protects is about to be replaced by the stitch anyway. */
+      if (session?.capturing) return;
       if (window.innerWidth === metrics.cssWidth &&
           window.innerHeight === metrics.cssHeight) return;
       destroy();
@@ -273,8 +352,19 @@
 
       if (res?.ok) {
         if (res.degraded) {
-          // Pasted as HTML rather than a real image flavour. Say so instead of
-          // letting it look like a clean copy that silently is not one.
+          /* Pasted as HTML rather than a real image flavour. Say so instead of
+           * letting it look like a clean copy that silently is not one.
+           *
+           * Through the NOTICE, not the hint: below 640px the hint is
+           * display:none, and this overlay tears itself down 1.6s later. Put
+           * here, the one message that tells the user their clipboard does not
+           * hold a real image would have been invisible on every narrow
+           * window, with no second chance to see it.
+           *
+           * Short text on the badge, full sentence in the hint and the title,
+           * because the notice has to survive a 400px pill without pushing it
+           * off screen. */
+          toolbar.setNotice('Copied as HTML');
           toolbar.setHint(res.note ?? 'Copied (as HTML)');
           setTimeout(() => destroy(), 1600);
         } else {
@@ -289,6 +379,136 @@
       console.error('[NhakoCapture]', action, 'failed:', res?.error);
     }
     session.finish = finish;
+
+    /* Full-page capture. The loop hides the overlay and drives the document,
+     * geometry decides the composition, and stitch draws it. The editor handoff
+     * (T7) is the last piece missing, so for now the composed canvas is
+     * reported rather than delivered.
+     *
+     * `session` is re-checked after every await: destroy() can run underneath
+     * this (Esc, a resize, the tab navigating) and nulls it. */
+    async function captureFullPage() {
+      if (session?.capturing) return;
+      session.capturing = true;
+      session.cancelRequested = false;
+
+      const startedAt = Date.now();
+      /* The hint is set for sighted users; the announcer is what actually
+       * reaches a screen reader, because the pill is about to be hidden and
+       * this one is not. The badge that follows is browser chrome and is not
+       * in the accessibility tree at all. */
+      toolbar.setHint('Capturing full page…');
+      announcer.say('Capturing full page. This may take a few seconds.');
+
+      try {
+        const result = await fullpageModule.run({
+          hide: () => stage.hide(),
+          show: () => { if (session) stage.show(); },
+          shouldCancel: () => !session || session.cancelRequested === true,
+          /* The badge, not the pill. The pill is hidden for the duration by
+           * design, and browser chrome is the one surface that cannot end up
+           * inside the screenshot. Fire-and-forget -- a dropped progress tick
+           * is not worth interrupting a capture for. */
+          onProgress: (index, total) => {
+            chrome.runtime
+              .sendMessage({ type: 'nc:progress', index, total })
+              .catch(() => {});
+          },
+          scaleY: metrics.scaleY,
+        });
+
+        if (!session) return;
+
+        if (result.cancelled) {
+          toolbar.setHint(hintFor(selection.mode));
+          announcer.say('Full page capture cancelled. The page is unchanged.');
+          return;
+        }
+        if (!result.ok) {
+          toolbar.setHint('Full page failed');
+          announcer.say('Full page capture failed.');
+          console.error('[NhakoCapture] full page failed:', result.error);
+          return;
+        }
+
+        const captureMs = Date.now() - startedAt;
+
+        toolbar.setHint('Stitching…');
+        let canvas;
+        try {
+          canvas = await stitchModule.stitch(result.tiles, {
+            scaleY: metrics.scaleY,
+            cssHeight: result.documentHeight,
+          });
+        } catch (err) {
+          if (!session) return;
+          toolbar.setHint('Full page failed');
+          console.error('[NhakoCapture] stitch failed:', err);
+          return;
+        }
+        if (!session) return;
+
+        const elapsed = Date.now() - startedAt;
+        console.info(
+          `[NhakoCapture] full page: ${result.tiles.length} tiles in ${captureMs}ms ` +
+          `(${Math.round(captureMs / result.tiles.length)}ms/tile), ` +
+          `stitched ${canvas.width}x${canvas.height} in ${elapsed - captureMs}ms, ` +
+          `${result.fullDocumentHeight}px document${result.capped ? ' — CAPPED' : ''}`
+        );
+
+        /* Handed over as a data URL because extension messaging serialises to
+         * JSON -- a canvas, an ImageBitmap or a page-origin blob URL all fail
+         * to survive the trip, and a page-origin blob is opaque to the editor
+         * window anyway. The service worker turns it into a blob URL on the
+         * far side, where the editor can actually read it. */
+        const dataUrl = canvas.toDataURL('image/png');
+        const handoff = await chrome.runtime.sendMessage({
+          type: 'nc:full-page-done',
+          dataUrl,
+          width: canvas.width,
+          height: canvas.height,
+          capped: result.capped,
+        }).catch((err) => ({ ok: false, error: String(err) }));
+
+        if (!handoff?.ok) {
+          if (!session) return;
+          toolbar.setHint('Full page failed');
+          announcer.say('Full page capture failed.');
+          console.error('[NhakoCapture] handoff failed:', handoff?.error);
+          return;
+        }
+
+        /* The other endpoint. Said before teardown, and from an element that
+         * outlives the overlay by design. */
+        announcer.say(
+          `Full page captured, ${canvas.width} by ${canvas.height} pixels` +
+          `${result.capped ? ', capped' : ''}. Opening the editor window.`
+        );
+
+        /* The editor window owns the capture now. Leaving the overlay up would
+         * put a frozen viewport in front of a page the user has finished with,
+         * behind a window they are about to work in. */
+        destroy();
+      } finally {
+        /* Cleared on every exit -- success, cancel, failure, and a teardown
+         * that happened underneath us. A counter left frozen at 7/12 on the
+         * toolbar is a worse lie than no counter at all. */
+        chrome.runtime.sendMessage({ type: 'nc:progress', done: true }).catch(() => {});
+        if (session) {
+          session.capturing = false;
+          /* Something asked to tear down while the loop held the scroll lock.
+           * The page is back the way it was now, so it is safe to finish. */
+          if (session.destroyWhenIdle) destroy();
+        }
+      }
+    }
+    /* Exposed the same way `finish` is, and for the same reason: until T8 puts
+     * a button on the pill there is no other way to drive this by hand. From
+     * DevTools, with the console context switched to the extension's isolated
+     * world:
+     *   NhakoCapture.modules.overlay.session.captureFullPage()
+     */
+    session.captureFullPage = captureFullPage;
 
     /* The overlay has to be gone before the PDF is rendered -- printToPDF
      * rasterises the live DOM, and our scrim and toolbars are part of it. Tear
@@ -321,6 +541,22 @@
 
   function destroy() {
     if (!session) return;
+
+    /* A capture in flight owns the document's scroll lock and restores it from
+     * its own record, in its own finally. Tearing down now would let that
+     * restore land AFTER this one and re-apply `overflow: hidden` to a page
+     * with no overlay left on it -- permanently unscrollable, with nothing on
+     * screen to explain why.
+     *
+     * So teardown is not refused, it is deferred: cancel the loop and let it
+     * finish putting the page back, then tear down for real. One teardown
+     * path, one owner of the lock at a time. */
+    if (session.capturing) {
+      session.cancelRequested = true;
+      session.destroyWhenIdle = true;
+      return;
+    }
+
     session.cleanup.runAll();
     session = null;
     NC.destroy = null;

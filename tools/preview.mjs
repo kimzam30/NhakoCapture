@@ -73,6 +73,15 @@ const PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`
 <footer>© Meridian — a fictional site used to preview a screenshot tool.</footer>
 `)}`;
 
+/* The same site, made taller than the viewport. `Capture full page` is
+ * disabled on the short fixture above -- correctly, there is nothing below the
+ * fold -- so the enabled path needs a page that actually has one. */
+const TALL_PAGE = PAGE + encodeURIComponent(
+  '<div class="cards">' +
+  '<div class="card"><h3>More</h3><p>Filler that pushes this page past the fold.</p></div>'.repeat(24) +
+  '</div>'
+);
+
 /* --- minimal CDP client --------------------------------------------------- */
 class CDP {
   constructor(ws) { this.ws = ws; this.id = 0; this.pending = new Map(); }
@@ -159,6 +168,16 @@ function check(label, cond, detail) {
 }
 
 async function mountOverlay(cdp) {
+  /* Tear down any overlay that is still up BEFORE screenshotting the page.
+   * The real extension gets this for free -- background.js captures the
+   * viewport before injecting anything, precisely so its own UI cannot end up
+   * inside the capture. This harness screenshots from inside the page, so it
+   * has to arrange the same thing by hand, or a remount bakes the previous
+   * pill into the new backdrop and every shot after it is ghosted. */
+  await cdp.eval(
+    `(() => { try { globalThis.NhakoCapture?.modules?.overlay?.destroy?.(); } catch {} })()`
+  );
+  await sleep(60);
   const backdrop = 'data:image/png;base64,' +
     (await cdp.send('Page.captureScreenshot', { format: 'png' })).data;
   /* A real page already has a window.chrome (loadTimes, csi) but no runtime,
@@ -171,7 +190,9 @@ async function mountOverlay(cdp) {
     globalThis.chrome = Object.assign({}, globalThis.chrome, {
       runtime: {
         onMessage: { addListener(){} },
-        sendMessage: async (msg) => { globalThis.__sent.push(msg); return globalThis.__reply ?? { ok: true }; },
+        sendMessage: async (msg) => { globalThis.__sent.push(msg);
+          const r = globalThis.__reply;
+          return (typeof r === 'function' ? r(msg) : r) ?? { ok: true }; },
       },
     });`);
   for (const m of MODULES) await cdp.eval(read(m));
@@ -287,15 +308,201 @@ async function main() {
     check('three launches leave exactly one host', await hostCount(cdp) === 1,
       `got ${await hostCount(cdp)}`);
 
-    /* --- capture full screen --------------------------------------------- */
+    /* --- the pill's two capture extents ---------------------------------- */
+    /* Scoped to the pill. The tool rail's Copy and Save share the .nc-btn
+       class, so an unscoped query reaches them first -- and the rail is hidden
+       until a frame exists, which makes its buttons unfocusable and any test
+       that lands on one quietly meaningless. */
+    const labels = JSON.parse(await cdp.eval(
+      `JSON.stringify([...document.getElementById('nhako-capture-host').shadowRoot
+        .querySelectorAll('.nc-pill .nc-btn')].map(b => b.getAttribute('aria-label')))`));
+    check('the pill names the visible extent honestly',
+      labels.includes('Capture visible page'), JSON.stringify(labels));
+    check('and offers the full extent beside it',
+      labels.includes('Capture full page'), JSON.stringify(labels));
+    check('ordered by extent, visible before full',
+      labels.indexOf('Capture visible page') < labels.indexOf('Capture full page'),
+      JSON.stringify(labels));
+
+    /* This fixture is shorter than the viewport, so full page has nothing to
+       add and says so rather than producing a near-duplicate. */
+    const disabled = JSON.parse(await cdp.eval(
+      `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
+          .find(x => x.getAttribute('aria-label') === 'Capture full page');
+        b.focus();
+        return JSON.stringify({
+          ariaDisabled: b.getAttribute('aria-disabled'),
+          hasDisabledAttr: b.hasAttribute('disabled'),
+          focusable: sr.activeElement === b,
+          hintOnFocus: sr.querySelector('.nc-hint').textContent,
+          colour: getComputedStyle(b).color,
+          opacity: getComputedStyle(b).opacity,
+        }); })()`));
+
+    check('full page is disabled on a page with nothing below the fold',
+      disabled.ariaDisabled === 'true', JSON.stringify(disabled));
+    check('...via aria-disabled, not the attribute that removes it from tab order',
+      disabled.hasDisabledAttr === false);
+    check('...so a keyboard user can still reach it', disabled.focusable === true);
+    check('...and hears why', disabled.hintOnFocus === 'Whole page already visible',
+      disabled.hintOnFocus);
+    check('...greyed by colour, not opacity',
+      disabled.opacity === '1' && disabled.colour === 'rgb(154, 154, 154)',
+      JSON.stringify(disabled));
+
+    const afterBlur = await cdp.eval(
+      `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        sr.querySelector('.nc-pill .nc-btn').focus();
+        return sr.querySelector('.nc-hint').textContent; })()`);
+    check('the reason does not outlive the focus that raised it',
+      afterBlur === 'Drag to select an area', afterBlur);
+
+    /* --- capture visible page -------------------------------------------- */
     await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
-      [...sr.querySelectorAll('.nc-btn')].find(b => /full screen/i.test(b.textContent)).click(); })()`);
+      [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
     await sleep(200);
     const full = JSON.parse(await rectOf(cdp));
-    check('capture full screen selects the whole viewport',
+    check('capture visible page selects the whole viewport',
       full && full.x === 0 && full.y === 0 && full.w === W, JSON.stringify(full));
-    await shoot(cdp, '03-full-screen');
+    await shoot(cdp, '03-visible-page');
 
+
+    /* --- full page, on a page that actually has one ----------------------- */
+    {
+      await cdp.send('Page.navigate', { url: TALL_PAGE });
+      await sleep(300);
+      await mountOverlay(cdp);
+
+      const state = JSON.parse(await cdp.eval(
+        `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
+            .find(x => x.getAttribute('aria-label') === 'Capture full page');
+          b.focus();
+          return JSON.stringify({
+            ariaDisabled: b.getAttribute('aria-disabled'),
+            colour: getComputedStyle(b).color,
+            hint: sr.querySelector('.nc-hint').textContent,
+            docHeight: document.documentElement.scrollHeight,
+            viewHeight: innerHeight,
+          }); })()`));
+
+      check('the tall fixture really is taller than the viewport',
+        state.docHeight > state.viewHeight + 32, JSON.stringify(state));
+      check('full page is enabled where there IS something below the fold',
+        state.ariaDisabled === null, JSON.stringify(state));
+      check('...and carries the live text colour, not the disabled one',
+        state.colour !== 'rgb(154, 154, 154)', state.colour);
+      check('...and announces no reason, because there is none',
+        state.hint === 'Drag to select an area', state.hint);
+
+      // Back to the short fixture for the rest of the run.
+      await cdp.send('Page.navigate', { url: PAGE });
+      await sleep(300);
+      await mountOverlay(cdp);
+      await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
+      await sleep(200);
+    }
+
+    /* --- T10: what happens when something tears down MID-capture ---------- */
+    {
+      await cdp.send('Page.navigate', { url: TALL_PAGE });
+      await sleep(300);
+      /* Remember the page's own overflow, before any overlay touches it. */
+      const pageOverflow = await cdp.eval(`document.documentElement.style.overflow`);
+      await mountOverlay(cdp);
+
+      /* Answer capture-tile with a real (tiny) PNG so the loop runs end to end
+         without an extension behind it. */
+      await cdp.eval(`globalThis.__reply = (msg) =>
+        msg.type === 'nc:capture-tile'
+          ? { ok: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }
+          : { ok: true };`);
+
+      /* Deliberately NOT returning the promise. cdp.eval sets awaitPromise, so
+         handing it back would block here until the whole capture finished --
+         and every assertion below is about what is true WHILE it runs. */
+      await cdp.eval(`(() => {
+        globalThis.__scrollBefore = scrollY;
+        globalThis.__capture = NhakoCapture.modules.overlay.session.captureFullPage();
+        return 'started';
+      })()`);
+      await sleep(250);
+
+      const capturing = await cdp.eval(
+        `String(!!NhakoCapture.modules.overlay.session?.capturing)`);
+      check('a capture is genuinely in flight', capturing === 'true', capturing);
+
+      /* (1) A REAL size change, not a synthetic event. On a real page the
+         capture lifts the scroll lock, the scrollbar returns and innerWidth
+         drops -- a genuine resize by this guard's own measure, on essentially
+         every scrollbarred page. This harness runs with --hide-scrollbars, so
+         that particular trigger cannot happen here; the viewport is resized
+         outright instead, which is the same event from the handler's point of
+         view. Dispatching a bare Event('resize') would have proved nothing:
+         with the dimensions unchanged the handler returns early regardless of
+         the guard. */
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 1180, height: H, deviceScaleFactor: 1, mobile: false });
+      await sleep(120);
+      const resized = JSON.parse(await cdp.eval(`JSON.stringify({
+        host: !!document.getElementById('nhako-capture-host'),
+        width: innerWidth,
+        stillCapturing: !!NhakoCapture.modules.overlay.session?.capturing,
+      })`));
+      check('the viewport really did change size', resized.width === 1180,
+        JSON.stringify(resized));
+      check('...and the capture is still running', resized.stillCapturing === true,
+        JSON.stringify(resized));
+      check('a resize during a capture does not tear the overlay down',
+        resized.host === true, JSON.stringify(resized));
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: W, height: H, deviceScaleFactor: 1, mobile: false });
+
+      /* (2) Teardown mid-capture must be deferred, not raced. If it is not,
+         the loop's restore lands after the overlay's and puts overflow:hidden
+         back on a page with no overlay left -- permanently unscrollable. */
+      await cdp.eval(`NhakoCapture.modules.overlay.destroy()`);
+      const stillUp = await cdp.eval(
+        `String(!!document.getElementById('nhako-capture-host'))`);
+      check('teardown during a capture is deferred, not immediate',
+        stillUp === 'true');
+
+      /* Wait for the CAPTURE to settle, not for the host to vanish.
+         Waiting on the host is what a first draft of this test did, and it
+         made the assertions below meaningless: without the deferral the host
+         disappears instantly, so the checks ran BEFORE the loop's finally had
+         re-applied its recorded overflow. The damage this test exists to catch
+         lands after that point, so the wait has to reach past it. */
+      await cdp.eval(`globalThis.__capture.catch(() => {}).then(() => 'settled')`);
+      await sleep(120);
+
+      const after = JSON.parse(await cdp.eval(`JSON.stringify({
+        host: !!document.getElementById('nhako-capture-host'),
+        overflow: document.documentElement.style.overflow,
+        scrollY, before: globalThis.__scrollBefore,
+      })`));
+
+      check('the deferred teardown does eventually complete', after.host === false,
+        JSON.stringify(after));
+      /* The assertion that discriminates. A scroll-based probe does NOT: this
+         browser happily scrolls a documentElement with overflow:hidden, so a
+         "can it still scroll" check passes identically whether or not the bug
+         is present, and reads as reassurance while proving nothing. */
+      check('the page is NOT left pinned by the loop\'s restore',
+        after.overflow === pageOverflow, JSON.stringify(after));
+      check('scroll position is where the user left it',
+        after.scrollY === after.before, JSON.stringify(after));
+
+      await cdp.eval(`globalThis.__reply = { ok: true };`);
+      await cdp.send('Page.navigate', { url: PAGE });
+      await sleep(300);
+      await mountOverlay(cdp);
+      await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
+      await sleep(200);
+    }
 
     /* --- annotation engine ------------------------------------------------ */
     await key(cdp, 'Escape'); await key(cdp, 'Escape');
@@ -431,6 +638,60 @@ async function main() {
       (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Pasted as HTML',
       await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`));
 
+    /* T12: and it must survive the narrow-window collapse. The hint is
+       display:none below 640px, and the overlay tears itself down 1.6s after a
+       degraded copy -- so a message that lives only in the hint is invisible
+       on a narrow window, permanently, for the one outcome the user most needs
+       to know about. */
+    {
+      const degraded = JSON.parse(await shadowEval(cdp, `
+        const n = sr.querySelector('.nc-notice');
+        return JSON.stringify({
+          hidden: n.hidden, text: n.textContent, title: n.title,
+          hintText: sr.querySelector('.nc-hint').textContent,
+        });`));
+      check('a degraded copy also raises the notice',
+        degraded.hidden === false && /HTML/.test(degraded.text),
+        JSON.stringify(degraded));
+      check('the notice text is short enough for a narrow pill',
+        degraded.text.length <= 20, degraded.text);
+      check('the full sentence is still available in the hint',
+        degraded.hintText === 'Pasted as HTML', degraded.hintText);
+    }
+
+    /* Same outcome, narrow window: the hint is gone, the notice is not. */
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 480, height: 720, deviceScaleFactor: 1, mobile: false });
+    await sleep(250);
+    await mountOverlay(cdp);
+    await drag(cdp, [60, 160], [420, 460]);
+    await sleep(200);
+    await cdp.eval(`globalThis.__reply = { ok: true, degraded: true, note: 'Pasted as HTML' };`);
+    await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+    await sleep(300);
+    {
+      const narrow = JSON.parse(await shadowEval(cdp, `
+        const n = sr.querySelector('.nc-notice');
+        const pill = sr.querySelector('.nc-pill');
+        return JSON.stringify({
+          hintShown: getComputedStyle(sr.querySelector('.nc-hint')).display,
+          noticeShown: getComputedStyle(n).display,
+          noticeText: n.textContent,
+          fits: pill.getBoundingClientRect().width <= innerWidth,
+        });`));
+      check('at 480px the hint really is hidden', narrow.hintShown === 'none',
+        narrow.hintShown);
+      check('...but the degraded-copy notice is NOT',
+        narrow.noticeShown !== 'none' && /HTML/.test(narrow.noticeText),
+        JSON.stringify(narrow));
+      check('...and the pill still fits the window', narrow.fits === true,
+        JSON.stringify(narrow));
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    await sleep(250);
+    await cdp.eval(`globalThis.__reply = { ok: true };`);
+
     /* a failure must leave the capture on screen, not throw it away */
     await mountOverlay(cdp);
     await drag(cdp, [260, 200], [900, 560]);
@@ -491,13 +752,344 @@ async function main() {
     await mountOverlay(cdp);
     const labelsHidden = await cdp.eval(`(() => {
       const sr = document.getElementById('nhako-capture-host').shadowRoot;
-      const l = sr.querySelector('.nc-btn__label');
+      /* Scoped to the pill. The rail's Copy and Save carry .nc-btn__label too,
+         and they are deliberately exempt from this collapse -- an unscoped
+         query finds one of those first and tests the opposite intent. */
+      const l = sr.querySelector('.nc-pill .nc-btn__label');
+      const done = sr.querySelector('.nc-group--done .nc-btn__label');
       const hint = sr.querySelector('.nc-hint');
-      return { label: l && getComputedStyle(l).display, hint: hint && getComputedStyle(hint).display };
+      return { label: l && getComputedStyle(l).display,
+               done: done && getComputedStyle(done).display,
+               hint: hint && getComputedStyle(hint).display };
     })()`);
-    check('button labels collapse below 640px', labelsHidden.label === 'none', JSON.stringify(labelsHidden));
+    check('pill button labels collapse below 640px', labelsHidden.label === 'none', JSON.stringify(labelsHidden));
+    check('...but Copy and Save keep theirs — they are the point of the overlay',
+      labelsHidden.done !== 'none', JSON.stringify(labelsHidden));
     check('hint text collapses below 640px', labelsHidden.hint === 'none');
     await shoot(cdp, '04-narrow');
+
+    /* T9: with the labels gone, shape is the only thing left to tell the two
+       capture extents apart. The eye test is a human judgement made against
+       rendered candidates; what a machine can hold is that the two never
+       silently become the same icon, and that both stay reachable by name. */
+    {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 400, height: 720, deviceScaleFactor: 1, mobile: false });
+      await sleep(300);
+      await mountOverlay(cdp);
+
+      const icons = JSON.parse(await cdp.eval(
+        `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          const btns = [...sr.querySelectorAll('.nc-pill .nc-btn')];
+          const pill = sr.querySelector('.nc-pill');
+          const of = (name) => {
+            const b = btns.find(x => x.getAttribute('aria-label') === name);
+            return b && b.querySelector('svg').innerHTML;
+          };
+          return JSON.stringify({
+            visible: of('Capture visible page'),
+            full: of('Capture full page'),
+            pdf: of('Save page as PDF'),
+            names: btns.map(b => b.getAttribute('aria-label')),
+            labelShown: getComputedStyle(btns[0].querySelector('.nc-btn__label')).display,
+            overflows: pill.scrollWidth > innerWidth,
+          }); })()`));
+
+      check('at 400px the labels really are gone', icons.labelShown === 'none');
+      check('both capture extents are still offered',
+        icons.visible && icons.full, JSON.stringify(icons.names));
+      check('the two capture icons are not the same shape',
+        icons.visible !== icons.full);
+      check('nor is either the same as the PDF icon',
+        icons.full !== icons.pdf && icons.visible !== icons.pdf);
+      check('the two capture icons share a motif rather than being unrelated',
+        icons.full.includes('M3 7V5a2 2 0 0 1 2-2h2'), icons.full);
+      check('every control keeps a name once its label is hidden',
+        icons.names.every(n => n && n.length > 0), JSON.stringify(icons.names));
+      check('the pill still fits at 400px', icons.overflows === false);
+      await shoot(cdp, '04b-narrow-400');
+
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width: 560, height: 720, deviceScaleFactor: 1, mobile: false });
+      await sleep(200);
+    }
+
+    /* --- T14: accessibility ------------------------------------------------ */
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: W, height: H, deviceScaleFactor: 1, mobile: false });
+    await sleep(250);
+    {
+      await cdp.send('Page.navigate', { url: TALL_PAGE });
+      await sleep(300);
+      await mountOverlay(cdp);
+
+      /* The announcer must be OUTSIDE the shadow host, or it disappears from
+         the accessibility tree the moment the overlay hides for a capture. */
+      const ann = JSON.parse(await cdp.eval(`(() => {
+        const el = [...document.documentElement.children]
+          .find(n => n.getAttribute && n.getAttribute('role') === 'status');
+        if (!el) return JSON.stringify({ found: false });
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        return JSON.stringify({
+          found: true,
+          insideHost: !!document.getElementById('nhako-capture-host')?.contains(el),
+          live: el.getAttribute('aria-live'),
+          w: Math.round(r.width), h: Math.round(r.height),
+          clip: cs.clipPath, overflow: cs.overflow,
+        });
+      })()`));
+
+      check('there is a live region outside the overlay', ann.found === true,
+        JSON.stringify(ann));
+      check('...genuinely outside it, so hiding the overlay cannot mute it',
+        ann.insideHost === false, JSON.stringify(ann));
+      check('...announced politely', ann.live === 'polite', ann.live);
+      /* Un-photographable: it must paint nothing, or it lands in the tiles. */
+      check('...and paints nothing a capture could pick up',
+        ann.w <= 1 && ann.h <= 1 && ann.clip !== 'none', JSON.stringify(ann));
+
+      /* Endpoint 1. The pill's own hint cannot do this job: run() is
+         synchronous up to its first await, so the hint is set and the host is
+         hidden in the SAME task -- populated and removed from the a11y tree
+         before anything could observe it. */
+      await cdp.eval(`globalThis.__reply = (msg) =>
+        msg.type === 'nc:capture-tile'
+          ? { ok: true, dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }
+          : { ok: true };`);
+      await cdp.eval(`(() => {
+        globalThis.__capture = NhakoCapture.modules.overlay.session.captureFullPage();
+        return 'started';
+      })()`);
+      await sleep(250);
+
+      const during = JSON.parse(await cdp.eval(`(() => {
+        const host = document.getElementById('nhako-capture-host');
+        const el = [...document.documentElement.children]
+          .find(n => n.getAttribute && n.getAttribute('role') === 'status');
+        return JSON.stringify({
+          hostHidden: getComputedStyle(host).display === 'none',
+          announced: el.textContent,
+          hintInShadow: host.shadowRoot.querySelector('.nc-hint').textContent,
+        });
+      })()`));
+
+      check('the overlay really is hidden during a capture',
+        during.hostHidden === true, JSON.stringify(during));
+      check('the start of a capture is announced from outside it',
+        /Capturing full page/.test(during.announced), JSON.stringify(during));
+      check('...which the pill hint could not have done from inside a hidden host',
+        during.hintInShadow === 'Capturing full page…', during.hintInShadow);
+
+      /* Endpoint 2: arrival. */
+      await cdp.eval(`globalThis.__capture.catch(() => {}).then(() => 'settled')`);
+      await sleep(150);
+      const ended = await cdp.eval(`(() => {
+        const el = [...document.documentElement.children]
+          .find(n => n.getAttribute && n.getAttribute('role') === 'status');
+        return el ? el.textContent : '(announcer gone)';
+      })()`);
+      check('the end of a capture is announced too',
+        /captured|failed|cancelled/i.test(ended), ended);
+
+      await cdp.eval(`globalThis.__reply = { ok: true };`);
+      await cdp.send('Page.navigate', { url: PAGE });
+      await sleep(300);
+      await mountOverlay(cdp);
+    }
+
+    /* the disabled control: reachable, ringed, and readable */
+    {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+      await sleep(120);
+
+      const a11y = JSON.parse(await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
+          .find(x => x.getAttribute('aria-label') === 'Capture full page');
+        b.focus();
+        const cs = getComputedStyle(b);
+
+        /* WCAG contrast, computed against the grounds this control actually
+           sits on -- read from the live stylesheet, not from a design note. */
+        const lin = (c) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+        const lum = ([r, g, bl]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(bl);
+        /* [0-9.] not [\d.]: this whole probe is inside a template literal, where
+           a backslash escape collapses before the regex is ever compiled. */
+        const parse = (s) => s.match(/[0-9.]+/g).slice(0, 3).map(Number);
+        const ratio = (a, b2) => { const [x, y] = [lum(a), lum(b2)].sort((p, q) => q - p);
+                                   return (x + 0.05) / (y + 0.05); };
+        /* Resolved by the browser rather than parsed by hand: a probe element
+           painted with the token, read back as rgb(). Hex-string surgery on
+           getPropertyValue is what an earlier version of this did, and it
+           returned empty for half the tokens. */
+        const root = sr.querySelector('.nc-root');
+        const tok = (n) => {
+          const probe = document.createElement('div');
+          probe.style.cssText = 'background:var(' + n + ')';
+          root.appendChild(probe);
+          const v = parse(getComputedStyle(probe).backgroundColor);
+          probe.remove();
+          return v;
+        };
+        const fg = parse(cs.color);
+        const surface = tok('--nc-surface');
+        const raised = tok('--nc-surface-raised');
+        /* --nc-surface-glass is 0.92 alpha; worst case is a white page behind. */
+        const glassOnWhite = surface.map(c => Math.round(0.92 * c + 0.08 * 255));
+
+        return JSON.stringify({
+          focused: sr.activeElement === b,
+          ring: cs.boxShadow,
+          colour: cs.color,
+          opacity: cs.opacity,
+          onSurface: +ratio(fg, surface).toFixed(2),
+          onRaised: +ratio(fg, raised).toFixed(2),
+          onGlass: +ratio(fg, glassOnWhite).toFixed(2),
+        });
+      })()`));
+
+      check('the disabled control can hold focus', a11y.focused === true,
+        JSON.stringify(a11y));
+      check('...and shows a focus ring rather than suppressing it',
+        a11y.ring && a11y.ring !== 'none', a11y.ring);
+      check('...greyed by colour, never opacity', a11y.opacity === '1', a11y.opacity);
+      check('disabled text clears 4.5:1 on the toolbar surface',
+        a11y.onSurface >= 4.5, String(a11y.onSurface));
+      check('...on the hover surface', a11y.onRaised >= 4.5, String(a11y.onRaised));
+      check('...and on glass over a white page, the worst case',
+        a11y.onGlass >= 4.5, String(a11y.onGlass));
+    }
+
+    /* forced-colors: hand the palette back to the OS */
+    {
+      await cdp.send('Emulation.setEmulatedMedia', {
+        features: [{ name: 'forced-colors', value: 'active' }] });
+      await sleep(200);
+      await mountOverlay(cdp);
+      const forced = JSON.parse(await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const root = sr.querySelector('.nc-root');
+        const cs = getComputedStyle(root);
+        return JSON.stringify({
+          disabled: cs.getPropertyValue('--nc-text-disabled').trim(),
+          accent: cs.getPropertyValue('--nc-accent-bright').trim(),
+        });
+      })()`));
+      check('forced-colors hands disabled text to the OS palette',
+        /GrayText/i.test(forced.disabled), JSON.stringify(forced));
+      check('...and the accent too, rather than painting our own',
+        /Highlight/i.test(forced.accent), JSON.stringify(forced));
+      await cdp.send('Emulation.setEmulatedMedia', { features: [] });
+      await sleep(150);
+      await mountOverlay(cdp);
+    }
+
+    /* --- T13: the pill at every breakpoint --------------------------------
+     *
+     * The pill now carries three labelled actions plus dismiss -- one more
+     * than it has ever had. Each width is checked with a notice present as
+     * well as without, because the notice is the widest thing that can appear
+     * in there and it is exactly what a fit test done on an empty pill misses.
+     */
+    for (const width of [320, 400, 640, 1280]) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', {
+        width, height: 720, deviceScaleFactor: 1, mobile: false });
+      await sleep(250);
+      await mountOverlay(cdp);
+
+      const measure = `
+        const pill = sr.querySelector('.nc-pill');
+        const btns = [...sr.querySelectorAll('.nc-pill .nc-btn')];
+        const dismiss = btns[btns.length - 1];
+        const p = pill.getBoundingClientRect();
+        const d = dismiss.getBoundingClientRect();
+        return JSON.stringify({
+          left: Math.round(p.left), right: Math.round(p.right),
+          width: Math.round(p.width), height: Math.round(p.height),
+          /* scrollWidth > clientWidth means content is being clipped inside
+             the pill -- the failure that looks fine from outside. */
+          clipped: pill.scrollWidth > pill.clientWidth + 1,
+          /* More than one row of controls means it wrapped. */
+          wrapped: p.height > 60,
+          dismissVisible: d.width > 0 && d.left >= p.left - 1 && d.right <= p.right + 1,
+          dismissInView: d.left >= 0 && d.right <= innerWidth,
+          labels: getComputedStyle(btns[0].querySelector('.nc-btn__label')).display,
+          controls: btns.length,
+        });`;
+
+      const bare = JSON.parse(await shadowEval(cdp, measure));
+      check(`${width}px: the pill fits the window`,
+        bare.left >= 0 && bare.right <= width, JSON.stringify(bare));
+      check(`${width}px: nothing is clipped inside it`, bare.clipped === false,
+        JSON.stringify(bare));
+      check(`${width}px: it has not wrapped to a second row`, bare.wrapped === false,
+        JSON.stringify(bare));
+      check(`${width}px: the dismiss control is reachable`,
+        bare.dismissVisible && bare.dismissInView, JSON.stringify(bare));
+      check(`${width}px: labels ${width <= 640 ? 'collapse' : 'show'}`,
+        (bare.labels === 'none') === (width <= 640), bare.labels);
+
+      /* Now the same width carrying the widest thing the pill can hold. */
+      await shadowEval(cdp, `
+        NhakoCapture.modules.overlay.session.toolbar.setNotice(
+          'Full page capped at 16384px — page is longer');
+        return 1;`);
+      await sleep(80);
+      const withNotice = JSON.parse(await shadowEval(cdp, measure));
+      check(`${width}px: still fits with a notice in it`,
+        withNotice.left >= 0 && withNotice.right <= width, JSON.stringify(withNotice));
+      check(`${width}px: and the dismiss control survives it`,
+        withNotice.dismissVisible && withNotice.dismissInView,
+        JSON.stringify(withNotice));
+
+      /* The notice shrinks and ellipsises rather than pushing the pill off
+         screen -- which is why the fit checks above pass at 320px. That is
+         only acceptable if what survives the truncation still carries the
+         claim. "Full page capp…" is a notice; "Full…" is decoration. */
+      const legible = JSON.parse(await shadowEval(cdp, `
+        const n = sr.querySelector('.nc-notice');
+        const cs = getComputedStyle(n);
+        const ctx = document.createElement('canvas').getContext('2d');
+        ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+        return JSON.stringify({
+          shown: Math.round(n.getBoundingClientRect().width),
+          needed: Math.ceil(ctx.measureText('Full page capped').width),
+          natural: n.scrollWidth,
+          truncated: n.scrollWidth > n.clientWidth + 1,
+        });`));
+      check(`${width}px: the notice keeps the word that carries its meaning`,
+        legible.shown >= legible.needed, JSON.stringify(legible));
+
+      /* The rail carries far more controls than the pill -- six tools, seven
+         inks, three weights, undo/redo and two actions. If anything overflows
+         a narrow window it is this, and it is the surface the user is actually
+         working in. */
+      await drag(cdp, [Math.round(width * 0.15), 180],
+                      [Math.round(width * 0.85), 420]);
+      await sleep(200);
+      const rail = JSON.parse(await shadowEval(cdp, `
+        const r = sr.querySelector('.nc-rail');
+        if (!r || r.hidden) return JSON.stringify({ hidden: true });
+        const b = r.getBoundingClientRect();
+        return JSON.stringify({
+          hidden: false,
+          left: Math.round(b.left), right: Math.round(b.right),
+          clipped: r.scrollWidth > r.clientWidth + 1,
+          controls: r.querySelectorAll('button').length,
+        });`));
+      check(`${width}px: the rail appears for a frame`, rail.hidden === false,
+        JSON.stringify(rail));
+      check(`${width}px: the rail fits the window`,
+        rail.left >= 0 && rail.right <= width, JSON.stringify(rail));
+      check(`${width}px: no rail control is clipped`, rail.clipped === false,
+        JSON.stringify(rail));
+    }
+    await cdp.send('Emulation.setDeviceMetricsOverride', {
+      width: 560, height: 720, deviceScaleFactor: 1, mobile: false });
+    await sleep(200);
+    await mountOverlay(cdp);
 
     /* --- T18: edge cases ---------------------------------------------------- */
     await key(cdp, 'Escape'); await key(cdp, 'Escape');
@@ -630,16 +1222,22 @@ async function main() {
         (await cdp.send('Page.captureScreenshot', { format: 'png' })).data;
       const css = STYLES.map(read).join('\n');
 
-      const shim = `
+      const stored = { capturedImage: capture };
+      /* A factory, not a string-replace on a built shim: the replace has to
+         match an interpolated JSON blob exactly, and when it silently does not
+         the test still runs -- against the wrong fixture. */
+      const makeShim = (st) => `
         globalThis.__sent = [];
         globalThis.chrome = {
           storage: { local: {
-            get: async () => ({ capturedImage: ${JSON.stringify(capture)} }),
+            get: async () => (${JSON.stringify(st)}),
             remove: async () => {},
           }},
           runtime: {
             getURL: (p) => 'nc-style:' + p,
-            sendMessage: async (m) => { globalThis.__sent.push(m); return { ok: true }; },
+            sendMessage: async (m) => { globalThis.__sent.push(m);
+              const r = globalThis.__reply;
+              return (typeof r === 'function' ? r(m) : r) ?? { ok: true }; },
           },
         };
         const realFetch = globalThis.fetch;
@@ -647,6 +1245,7 @@ async function main() {
           ? { ok: true, text: async () => ${JSON.stringify(css)} }
           : realFetch(u);
       `;
+      const shim = makeShim(stored);
       const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: shim });
 
       await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
@@ -662,7 +1261,7 @@ async function main() {
           rail: !!(sr && sr.querySelector('.nc-rail')),
           tools: sr ? sr.querySelectorAll('.nc-tool').length : -1,
           box: box && { l: Math.round(box.left), t: Math.round(box.top), w: Math.round(box.width), h: Math.round(box.height) },
-          pillButtons: sr ? [...sr.querySelectorAll('.nc-btn')].map(b => b.getAttribute('aria-label')) : [],
+          pillButtons: sr ? [...sr.querySelectorAll('.nc-pill .nc-btn')].map(b => b.getAttribute('aria-label')) : [],
         };
       })()`);
 
@@ -672,10 +1271,22 @@ async function main() {
       check('the capture is letterboxed inside the window',
         mounted.box && mounted.box.w > 0 && mounted.box.h > 0 &&
         mounted.box.l >= 0 && mounted.box.t >= 0, JSON.stringify(mounted.box));
-      check('no "Capture full screen" here — the capture IS the frame',
-        !mounted.pillButtons.includes('Capture full screen'), JSON.stringify(mounted.pillButtons));
+      check('no "Capture visible page" here — the capture IS the frame',
+        !mounted.pillButtons.includes('Capture visible page'), JSON.stringify(mounted.pillButtons));
+      check('no "Capture full page" here — there is no live tab to scroll',
+        !mounted.pillButtons.includes('Capture full page'), JSON.stringify(mounted.pillButtons));
       check('no "Save page as PDF" here — there is no live tab to print',
         !mounted.pillButtons.includes('Save page as PDF'));
+
+      /* T11, the other half: a capture that was NOT capped must say nothing.
+         A notice that appears either way is decoration, not information. */
+      const uncapped = JSON.parse(await cdp.eval(`(() => {
+        const sr = document.getElementById('nhako-capture-host').shadowRoot;
+        const n = sr.querySelector('.nc-notice');
+        return JSON.stringify({ present: !!n, hidden: n && n.hidden, text: n && n.textContent });
+      })()`));
+      check('an uncapped capture shows no notice',
+        uncapped.hidden === true && !uncapped.text, JSON.stringify(uncapped));
 
       const framed = await cdp.eval(`JSON.stringify(NhakoCapture.require('selection') && (() => {
         const sr = document.getElementById('nhako-capture-host').shadowRoot;
@@ -720,10 +1331,113 @@ async function main() {
       await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
       await sleep(300);
       const sentFromFallback = await cdp.eval(`globalThis.__sent.map(m => m.type)`);
+
       check('Copy from the fallback window routes to the background',
         sentFromFallback.includes('nc:copy'), JSON.stringify(sentFromFallback));
 
-      await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+      /* T12: the three copy outcomes must be as distinguishable here as they
+         are in the overlay. This window is where restricted-page and full-page
+         captures land, so an outcome that only reads correctly in the overlay
+         is only half-reported. */
+      {
+        const outcome = async (reply) => {
+          await cdp.eval(`globalThis.__reply = ${JSON.stringify(reply)};`);
+          await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+          await sleep(250);
+          return JSON.parse(await shadowEval(cdp, `
+            const n = sr.querySelector('.nc-notice');
+            return JSON.stringify({
+              hint: sr.querySelector('.nc-hint').textContent,
+              noticeHidden: n.hidden, notice: n.textContent,
+            });`));
+        };
+
+        const clean = await outcome({ ok: true });
+        check('editor: a clean copy says so', clean.hint === 'Copied!', clean.hint);
+        check('editor: ...and raises no notice', clean.noticeHidden === true,
+          JSON.stringify(clean));
+
+        const degraded = await outcome({ ok: true, degraded: true, note: 'Pasted as HTML' });
+        check('editor: a degraded copy does not claim a clean one',
+          degraded.hint !== 'Copied!', degraded.hint);
+        /* The notice, not the hint -- for symmetry with the overlay rather than
+           for the narrow-window reason: this window has a 720px minimum, so it
+           never reaches the collapse. Two surfaces reporting one outcome two
+           different ways is its own kind of dishonesty. */
+        check('editor: ...and raises the notice, as the overlay does',
+          degraded.noticeHidden === false && /HTML/.test(degraded.notice),
+          JSON.stringify(degraded));
+
+        const failed = await outcome({ ok: false, error: 'clipboard unavailable' });
+        check('editor: a refusal is reported as a failure',
+          /failed/i.test(failed.hint), failed.hint);
+        check('editor: ...and the window is still there to retry from',
+          (await cdp.eval(`String(!!document.getElementById('nhako-capture-host'))`)) === 'true');
+
+        await cdp.eval(`globalThis.__reply = { ok: true };`);
+      }
+
+      /* T11: the same window, told its capture was capped.
+         The first shim is REMOVED rather than layered over. Two injected
+         scripts share one global lexical scope, so a second copy declaring
+         `const realFetch` throws a redeclaration SyntaxError, never reaches
+         its assignment to globalThis.chrome, and leaves the page running on
+         the first shim's fixture -- a green test measuring the wrong thing. */
+      {
+        await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier });
+        const cappedShim = makeShim({ ...stored, captureCapped: true });
+        const { identifier: id2 } = await cdp.send(
+          'Page.addScriptToEvaluateOnNewDocument', { source: cappedShim });
+        await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+        await sleep(900);
+
+        const capped = JSON.parse(await cdp.eval(`(() => {
+          const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          const n = sr.querySelector('.nc-notice');
+          return JSON.stringify({
+            hidden: n && n.hidden,
+            text: n && n.textContent,
+            colour: n && getComputedStyle(n).color,
+            live: n && n.getAttribute('aria-live'),
+            beforeHint: n && (n.compareDocumentPosition(sr.querySelector('.nc-hint'))
+                              & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            /* From the shadow root. A document-level querySelector cannot see
+               through the boundary and returns undefined, which made an earlier
+               version of the height check below pass without testing anything. */
+            imageHeight: sr.querySelector('img.nc-backdrop')?.naturalHeight ?? null,
+          });
+        })()`));
+
+        check('a capped capture says so, in the pill', capped.hidden === false,
+          JSON.stringify(capped));
+        check('...naming a height rather than a vague warning',
+          /^Full page capped at \d+px — page is longer$/.test(capped.text || ''),
+          capped.text);
+        check("...and the height quoted is this image's own",
+          typeof capped.imageHeight === 'number' && capped.imageHeight > 0 &&
+          capped.text.includes(String(capped.imageHeight)), JSON.stringify(capped));
+        check('...in the notice colour, not the hint grey',
+          capped.colour === 'rgb(255, 204, 0)', capped.colour);
+        check('...announced politely rather than interrupting',
+          capped.live === 'polite', capped.live);
+        check('...and read before the hint, per the content hierarchy',
+          capped.beforeHint === true, JSON.stringify(capped));
+
+        await shoot(cdp, '08-capped-editor');
+
+        /* The reason it is not a hint: a status message must not erase it. */
+        const survived = JSON.parse(await cdp.eval(`(() => {
+          const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          sr.querySelector('.nc-hint').textContent = 'Copying…';
+          const n = sr.querySelector('.nc-notice');
+          return JSON.stringify({ hidden: n.hidden, text: n.textContent });
+        })()`));
+        check('the notice outlives a status message that would erase a hint',
+          survived.hidden === false && /capped/.test(survived.text),
+          JSON.stringify(survived));
+
+        await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id2 });
+      }
     }
 
     /* --- README hero -------------------------------------------------------
@@ -734,7 +1448,11 @@ async function main() {
     if (HERO) {
       await cdp.send('Emulation.clearDeviceMetricsOverride');
       await sleep(300);
-      await cdp.send('Page.navigate', { url: PAGE });
+      /* The tall fixture, whose first viewport is identical to the short one
+         but which actually has something below the fold -- so the README shows
+         both capture modes live rather than one greyed out. Honest either way;
+         this one is honest about the case that matters. */
+      await cdp.send('Page.navigate', { url: TALL_PAGE });
       await sleep(1200);
       await mountOverlay(cdp);
       // Sized to leave room for the rail below it at full opacity -- a dimmed

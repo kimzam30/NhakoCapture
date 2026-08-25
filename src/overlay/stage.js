@@ -125,7 +125,21 @@
 
     setHole(null);
 
-    return { host, shadow, root, layer, view, origin, setHole };
+    /* Full-page capture takes tiles with captureVisibleTab, which photographs
+     * the tab as rendered -- our shadow DOM included. The overlay therefore has
+     * to leave the screen for the duration. The host's display is set
+     * !important (it must survive a page whose own CSS says
+     * `div { display: none !important }`), so hiding it has to outrank that
+     * same declaration. */
+    function setHidden(hidden) {
+      host.style.setProperty('display', hidden ? 'none' : 'block', 'important');
+    }
+
+    return {
+      host, shadow, root, layer, view, origin, setHole,
+      hide: () => setHidden(true),
+      show: () => setHidden(false),
+    };
   }
 
   NC.define('stage', { mount, HOST_ID });

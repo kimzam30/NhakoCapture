@@ -88,9 +88,102 @@
     };
   }
 
-  /* The whole viewport, in device pixels. Used by "Capture full screen". */
+  /* The whole viewport, in device pixels. Used by "Capture visible page". */
   function fullViewport(m) {
     return { x: 0, y: 0, w: m.bitmapWidth, h: m.bitmapHeight };
+  }
+
+  /* --- full-page tiling ---------------------------------------------------
+   *
+   * Everything below is pure arithmetic over numbers the caller measured, for
+   * the same reason the rest of this file is: an off-by-DPR or off-by-a-tile
+   * error here does not crash, it produces a screenshot with a seam or a strip
+   * of blank at the bottom, and nobody notices until it is already pasted into
+   * a conversation.
+   */
+
+  /* Chromium will not allocate a canvas past this in either dimension. It fails
+   * by handing back a blank canvas rather than throwing, so this is checked
+   * before anything is allocated -- discovering it afterwards means discarding
+   * a capture the user already waited twenty seconds for. */
+  const CEILING_DEVICE_PX = 16384;
+
+  /* The scroll offsets to visit, in CSS pixels.
+   *
+   * Deliberately not `ceil(docHeight / viewHeight)` stops at even multiples:
+   *
+   *  - The last stop cannot be a full step past the one before it, because the
+   *    page will not scroll past its own end. It is clamped, which makes the
+   *    final tile OVERLAP its predecessor. That is wanted: tiles are placed at
+   *    the offset they were actually taken at, so an overlap overwrites
+   *    identical pixels instead of duplicating content.
+   *  - A page no taller than the viewport yields exactly one stop.           */
+  function planStops(docHeight, viewHeight, maxDocHeight = Infinity) {
+    if (!(viewHeight > 0)) throw new RangeError('planStops: viewport has no height');
+    const height = Math.min(docHeight, maxDocHeight);
+    const limit = Math.max(0, height - viewHeight);
+    const stops = [];
+    for (let y = 0; y < limit; y += viewHeight) stops.push(y);
+    stops.push(limit);
+    return stops;
+  }
+
+  /* How tall a document we are allowed to keep, in CSS pixels, given this
+   * page's scale. The ceiling is a DEVICE-pixel limit, so a 2x display caps at
+   * half the CSS height a 1x display would. */
+  function heightCeiling(scaleY, ceiling = CEILING_DEVICE_PX) {
+    return Math.floor(ceiling / (scaleY > 0 ? scaleY : 1));
+  }
+
+  function planFullPage({ docHeight, viewHeight, scaleY = 1, ceiling = CEILING_DEVICE_PX }) {
+    const maxDocHeight = heightCeiling(scaleY, ceiling);
+    return {
+      stops: planStops(docHeight, viewHeight, maxDocHeight),
+      capped: docHeight > maxDocHeight,
+      cssHeight: Math.min(docHeight, maxDocHeight),
+      fullCssHeight: docHeight,
+      maxDocHeight,
+    };
+  }
+
+  /* Turn observed tiles into draw instructions.
+   *
+   * `tiles` are {y, width, height} in the order captured -- y in CSS pixels as
+   * READ BACK after the scroll, width/height the tile bitmap's device size.
+   *
+   * The canvas height is the smaller of what the document claims and what the
+   * tiles actually cover, and that is not belt-and-braces, it is two distinct
+   * real cases:
+   *
+   *   - A page shorter than the viewport produces a viewport-sized tile whose
+   *     lower part is not document at all, just whatever the browser paints
+   *     under a short body. Trusting the tiles would stitch that in.
+   *   - A page that refuses to scroll (scrolljacking, a modal lock) produces
+   *     one tile for a document that claims to be tall. Trusting the document
+   *     would leave a strip of blank canvas below the only real tile.
+   *
+   * Taking the minimum is the only answer that is right in both.                */
+  function planStitch(tiles, { scaleY = 1, cssHeight = Infinity, ceiling = CEILING_DEVICE_PX } = {}) {
+    if (!tiles?.length) throw new RangeError('planStitch: no tiles');
+
+    const width = Math.max(...tiles.map((t) => t.width));
+    const placed = tiles.map((t) => ({ ...t, top: Math.round(t.y * scaleY) }));
+    const coverage = Math.max(...placed.map((t) => t.top + t.height));
+    const claimed = Number.isFinite(cssHeight) ? Math.round(cssHeight * scaleY) : Infinity;
+    const height = Math.min(Math.min(claimed, coverage), ceiling);
+
+    const draws = [];
+    for (const t of placed) {
+      if (t.top >= height) continue;              // entirely past the ceiling
+      const srcHeight = Math.min(t.height, height - t.top);
+      if (srcHeight <= 0) continue;
+      draws.push({
+        srcX: 0, srcY: 0, srcW: Math.min(t.width, width), srcH: srcHeight,
+        dstX: 0, dstY: t.top, dstW: Math.min(t.width, width), dstH: srcHeight,
+      });
+    }
+
+    return { width, height, draws };
   }
 
   /* Below this a drag is a misclick, not a selection. v1 used the same 10px
@@ -114,5 +207,10 @@
     isMeaningfulDrag,
     hasArea,
     MIN_DRAG,
+    planStops,
+    heightCeiling,
+    planFullPage,
+    planStitch,
+    CEILING_DEVICE_PX,
   });
 })();

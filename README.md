@@ -50,6 +50,7 @@ NhakoCapture rebuilds that reflex.
 | **Real redaction** | Blur replaces pixels with a blurred copy of themselves. The original values are not recoverable from the exported file. |
 | **Full undo** | Every mark is a record, not paint. `Ctrl+Z` / `Ctrl+Shift+Z` all the way back. |
 | **Copy or save** | Straight to the clipboard, or a real Save-As dialog that lets you pick where it goes. |
+| **Whole page as PNG** | Scroll-and-stitch, with sticky headers neutralised and lazy images woken first. |
 | **Whole page as PDF** | The entire document, not just the viewport. |
 | **Private by construction** | No network calls, no accounts, no telemetry, no analytics. Nothing leaves the machine. |
 
@@ -75,11 +76,32 @@ Press `Ctrl+Shift+5`, or click the toolbar icon.
 The page freezes under a dim scrim. From there:
 
 - **Drag** anywhere to frame a region.
-- **Capture full screen** takes the whole viewport.
-- **Save page as PDF** takes the entire document, beyond the fold.
+- **Capture visible page** takes the viewport — what is on screen, nothing more.
+- **Capture full page** scrolls the document and stitches the whole thing into
+  one image, then opens it in the editor window.
+- **Save page as PDF** takes the entire document as a PDF instead.
 
 Once you have a frame, the tool rail appears. Pick a tool, mark it up, then
 **Copy** or **Save**.
+
+### About full page
+
+It is a second gear, not the default, and it behaves like one:
+
+- It takes about **half a second per screenful**, because Chromium rate-limits
+  tab capture to roughly two calls a second. The extension icon counts the
+  tiles while it works — `3/9`, or a percentage past nine screenfuls.
+- The page is swept once first, to wake lazily-loaded images that have never
+  been scrolled into view.
+- Fixed headers, cookie bars and chat widgets appear **once**, at the top,
+  instead of banding down every screenful.
+- **Esc cancels.** Your scroll position and every element it touched go back
+  exactly as they were, on cancel, on failure, and on success alike.
+- Pages taller than 16384 device pixels are **capped** there rather than
+  downscaled, and the editor says so. A sharp screenshot of the first sixteen
+  thousand pixels is worth more than a soft one of everything.
+- On a page with nothing below the fold the button is disabled and says why —
+  a full-page capture would be the visible one, byte for byte.
 
 ### Keyboard
 
@@ -124,17 +146,19 @@ src/
 │   └── geometry.js    CSS ⇄ device-pixel maths
 ├── engine/
 │   ├── ops.js         append-only annotation list; undo/redo
-│   └── render.js      replays ops over the bitmap
+│   ├── render.js      replays ops over the bitmap
+│   └── stitch.js      composes full-page tiles onto one canvas
 ├── overlay/
 │   ├── inject.js      lifecycle, keyboard, teardown
 │   ├── stage.js       shadow host, frozen backdrop, scrim
 │   ├── selection.js   frame, handles, dimension badge
+│   ├── fullpage.js    scroll-and-stitch loop, sticky/lazy handling
 │   ├── annotate.js    annotation canvas and tools
 │   ├── rail.js        tool rail
 │   ├── toolbar.js     command pill
 │   ├── tokens.css     design tokens
 │   └── overlay.css    overlay UI
-└── fallback/          popup editor for brave:// pages (being rebuilt)
+└── fallback/          editor window: brave:// pages, and full-page captures
     ├── editor.html
     └── editor.js
 tools/                 icon generation and the test suite
@@ -194,15 +218,26 @@ Deliberately, and it is short:
 - **No sticker or emoji picker.** An asset set and a picker UI for little return.
 - **No selfie camera.** It needs webcam permission, which is a poor trade for a
   tool whose main promise is that nothing leaves your machine.
-- **Full page is a PDF**, as in Opera — not a scroll-stitched PNG.
+- **No horizontal stitching.** Pages wider than the viewport are captured at
+  viewport width. Only the document scroller is driven, so content inside an
+  inner `overflow: scroll` element is captured as it appears.
+- **No per-tile progress for screen readers.** The start and end of a full-page
+  capture are announced; the middle is deliberately quiet, because a polite
+  live region firing twelve times is chatter rather than information.
+- **Infinite-scroll feeds are not special-cased.** A page that grows as you
+  scroll it is captured to whatever extent existed when the capture started.
 
 ## Status
 
 Version 2.0.0 is a ground-up rebuild of v1.0. Capture, framing, annotation,
-copy, save and PDF are implemented, with 205 unit tests and 49 browser checks
-covering them. The restricted-page fallback editor (for `brave://` pages, where
-extensions cannot inject) is still being rebuilt; on those pages the extension
-currently reports why it cannot run rather than failing silently.
+copy, save, PDF, full-page scroll-and-stitch and the restricted-page editor
+window are all implemented, with **435 unit checks and 190 browser checks**
+covering them (`./tools/test.sh`).
+
+The browser checks drive a real Chromium over the DevTools protocol: real
+input, real shadow DOM, real computed styles. They are not a substitute for
+loading the extension in Brave, and the task list tracks which behaviours have
+been verified there and which have only been unit-tested.
 
 Remaining work is tracked in [`todo.md`](todo.md).
 
