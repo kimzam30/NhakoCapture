@@ -83,6 +83,14 @@
     /* inks */
     const inkGroup = group(rail);
     const swatches = new Map();
+    /* Resolved once, in init(), and read from here afterwards.
+     *
+     * sync() runs from ops.onChange, which fires on every ops.preview() -- that
+     * is, on every pointermove of every stroke. Asking getComputedStyle for
+     * seven swatch colours per sample forced seven style recalculations on the
+     * one hot path in the whole overlay, for seven values that are fixed at
+     * mount and never change. */
+    const inkColor = new Map();
     for (const ink of INKS) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -92,7 +100,7 @@
       b.setAttribute('aria-label', `${b.title} ink`);
       b.addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
-        annotate.setColor(getComputedStyle(b).backgroundColor);
+        annotate.setColor(inkColor.get(b) ?? getComputedStyle(b).backgroundColor);
       });
       inkGroup.appendChild(b);
       swatches.set(ink, b);
@@ -148,8 +156,7 @@
     function sync() {
       for (const [id, b] of toolButtons) b.classList.toggle('is-active', annotate.tool === id);
       for (const [, b] of swatches) {
-        b.classList.toggle('is-active',
-          getComputedStyle(b).backgroundColor === annotate.color);
+        b.classList.toggle('is-active', inkColor.get(b) === annotate.color);
       }
       for (const [value, b] of sizeButtons) b.classList.toggle('is-active', annotate.size === value);
       undoBtn.disabled = !ops.canUndo;
@@ -188,8 +195,6 @@
     }
 
     return {
-      element: rail,
-
       /* Called once, after the caller has finished wiring, because it reaches
        * back into annotate whose change handler refers to this rail -- doing it
        * inside create() would touch the binding before it is initialised.
@@ -199,13 +204,15 @@
        * without this the comparison in sync() never matches and the default ink
        * renders as unselected. */
       init() {
-        annotate.setColor(getComputedStyle(swatches.get('red')).backgroundColor);
+        for (const [, b] of swatches) {
+          inkColor.set(b, getComputedStyle(b).backgroundColor);
+        }
+        annotate.setColor(inkColor.get(swatches.get('red')));
         sync();
       },
 
       sync,
       position,
-      hide() { rail.hidden = true; },
       TOOLS,
       /* Single-key tool shortcuts, Opera-style. */
       handleKey(key) {

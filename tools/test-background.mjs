@@ -32,7 +32,8 @@ function ok(label, cond) { eq(label, !!cond, true); }
 function loadBackground({ captureFails = false, injectFails = false, cssFails = false,
                          attachFails = false, printFails = false,
                          offscreenSilentFor = 0, offscreenNeverAnswers = false, windowFails = false,
-                         existingContexts = 0, createFails = null } = {}) {
+                         existingContexts = 0, createFails = null, overlayUp = false } = {}) {
+  let liveContexts = existingContexts;
   let sends = 0;
   const calls = [];
   const listeners = {};
@@ -54,7 +55,13 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
         if (captureFails) throw new Error('capture denied');
         return 'data:image/png;base64,AAAA';
       },
-      sendMessage: async (...a) => { calls.push({ name: 'tabs.sendMessage', args: a }); return { ok: true }; },
+      /* The dismiss probe and the handoff are recorded under different names:
+       * the probe runs BEFORE the capture by design, and the ordering checks
+       * below are about the handoff. */
+      sendMessage: async (...a) => {
+        calls.push({ name: a[1]?.type === 'nc:dismiss' ? 'tabs.probe' : 'tabs.sendMessage', args: a });
+        return a[1]?.type === 'nc:dismiss' ? { ok: true, dismissed: overlayUp } : { ok: true };
+      },
     },
     scripting: {
       executeScript: async (...a) => {
@@ -66,7 +73,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     runtime: {
       onMessage: { addListener: (fn) => { listeners.message = fn; } },
       getURL: (p) => `chrome-extension://testid/${p}`,
-      getContexts: async () => new Array(existingContexts).fill({}),
+      getContexts: async () => new Array(liveContexts).fill({}),
       sendMessage: async (...a) => {
         calls.push({ name: 'runtime.sendMessage', args: a });
         sends += 1;
@@ -82,6 +89,11 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
       createDocument: async (...a) => {
         calls.push({ name: 'createDocument', args: a });
         if (createFails) throw new Error(createFails);
+        liveContexts += 1;
+      },
+      closeDocument: async (...a) => {
+        calls.push({ name: 'closeDocument', args: a });
+        liveContexts = 0;
       },
     },
     storage: { local: { set: async (...a) => { calls.push({ name: 'storage.set', args: a }); },
@@ -124,11 +136,30 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   // createImageBitmap is used to size the fallback window to the capture.
   const createImageBitmap = async () => ({ width: 1280, height: 720, close() {} });
 
-  const sandbox = { chrome, fetch, createImageBitmap, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout, clearTimeout, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
+  /* The offscreen idle-close is the only long timer in the worker. Capturing
+     it lets a test drive the close without sitting through the real delay,
+     while every short timer -- the readiness backoff, the failure badge --
+     still runs for real. `fireIdle` runs whatever is currently pending. */
+  const idle = [];
+  const idleTimeout = (fn, ms) => {
+    if (ms >= 10000) { idle.push(fn); return { __idle: idle.length - 1 }; }
+    return setTimeout(fn, ms);
+  };
+  const idleClear = (id) => {
+    if (id && typeof id === 'object' && '__idle' in id) { idle[id.__idle] = null; return; }
+    clearTimeout(id);
+  };
+  const fireIdle = async () => {
+    const pending = idle.filter(Boolean);
+    idle.length = 0;
+    for (const fn of pending) await fn();
+  };
+
+  const sandbox = { chrome, fetch, createImageBitmap, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout: idleTimeout, clearTimeout: idleClear, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
   sandbox.globalThis = sandbox;
   createContext(sandbox);
   runInContext(readFileSync(join(root, 'src/background.js'), 'utf8'), sandbox);
-  return { sandbox, calls, listeners, names: () => calls.map((c) => c.name) };
+  return { sandbox, calls, listeners, fireIdle, names: () => calls.map((c) => c.name) };
 }
 
 /* --- listeners are registered synchronously at top level ----------------- */
@@ -187,6 +218,28 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('handoff happened', iHandoff !== -1);
   ok('capture BEFORE injection', iCapture < iInject);
   ok('injection BEFORE handoff', iInject < iHandoff);
+}
+
+/* --- a second press closes the overlay instead of photographing it ------- */
+{
+  const { listeners, names } = loadBackground({ overlayUp: true });
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  const seq = names();
+  ok('the tab is asked whether an overlay is up', seq.includes('tabs.probe'));
+  ok('an open overlay is dismissed, not captured', !seq.includes('captureVisibleTab'));
+  ok('...and nothing is injected on top of it', !seq.includes('executeScript'));
+}
+{
+  const { listeners, names } = loadBackground();
+  await listeners.action({ id: 1, windowId: 2, url: 'https://example.com' });
+  const seq = names();
+  ok('the probe runs before the capture', seq.indexOf('tabs.probe') < seq.indexOf('captureVisibleTab'));
+}
+{
+  const { listeners, names } = loadBackground();
+  await listeners.action({ id: 1, windowId: 2, url: 'brave://settings' });
+  ok('restricted pages are not probed -- nothing can be injected there',
+    !names().includes('tabs.probe'));
 }
 
 /* --- restricted page: capture still happens, editing moves to a window ---- */
@@ -748,6 +801,85 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
 {
   const { listeners } = loadBackground();
   eq('unknown type not claimed', listeners.message({ type: 'nc:nonsense' }, {}, () => {}), false);
+}
+
+/* --- letting the offscreen document go ------------------------------------
+ *
+ * An offscreen document holds the extension's process open for as long as it
+ * exists, and every blob URL it minted pins that image alongside it. It used
+ * to be created once and never closed, so the first copy of a session kept
+ * both alive until the browser quit.
+ *
+ * The whole risk in closing it is closing it too early: a blob URL the editor
+ * window has not read yet, or a Save As dialog the user has left open, dies
+ * with the document that minted it. So both cases are pinned below.
+ */
+{
+  const { listeners, calls, fireIdle, names } = loadBackground();
+  const done = [];
+  listeners.message({ type: 'nc:copy', dataUrl: 'data:image/png;base64,AAAA' },
+    { tab: { id: 1 } }, (r) => done.push(r));
+  await new Promise((r) => setTimeout(r, 10));
+
+  ok('a copy needs the offscreen document', names().includes('createDocument'));
+  ok('...and does not close it while the copy is in flight',
+    !names().includes('closeDocument'));
+
+  await fireIdle();
+  ok('an idle offscreen document is closed rather than left resident',
+    names().includes('closeDocument'), names().join(','));
+  eq('and closing it takes no arguments', calls.find((c) => c.name === 'closeDocument').args.length, 0);
+}
+
+{
+  const { listeners, fireIdle, names } = loadBackground();
+  listeners.message({ type: 'nc:save', dataUrl: 'data:image/png;base64,AAAA' },
+    { tab: { id: 1 } }, () => {});
+  await new Promise((r) => setTimeout(r, 10));
+
+  await fireIdle();
+  ok('a blob still owed a revoke keeps the document open',
+    !names().includes('closeDocument'), names().join(','));
+}
+
+{
+  const { listeners, calls, fireIdle, names } = loadBackground();
+  listeners.message({ type: 'nc:save', dataUrl: 'data:image/png;base64,AAAA' },
+    { tab: { id: 1 } }, () => {});
+  await new Promise((r) => setTimeout(r, 10));
+
+  // The download settles, which is what revokes the blob. The id is the one
+  // chrome.downloads.download handed back, not an invented one -- a mismatch
+  // would make this test pass by never revoking anything.
+  ok('the download was registered', !!calls.find((c) => c.name === 'downloads.download'));
+  listeners.download({ id: 7, state: { current: 'complete' } });
+  await new Promise((r) => setTimeout(r, 10));
+
+  await fireIdle();
+  ok('once the download settles the document is released',
+    names().includes('closeDocument'), names().join(','));
+}
+
+{
+  /* The full-page handoff mints a blob for the editor WINDOW, which may take
+   * arbitrarily long to open and read it. Nothing may close the document out
+   * from under that. */
+  const { listeners, fireIdle, names } = loadBackground();
+  listeners.message(
+    { type: 'nc:full-page-done', dataUrl: 'data:image/png;base64,AAAA', width: 800, height: 4000 },
+    { tab: { id: 1 } }, () => {});
+  await new Promise((r) => setTimeout(r, 10));
+
+  await fireIdle();
+  ok('a capture handed to the editor window is not revoked underneath it',
+    !names().includes('closeDocument'), names().join(','));
+
+  // The editor says it has decoded the image; now the URL is dead weight.
+  listeners.message({ type: 'nc:capture-consumed', url: 'blob:nc/1' }, { tab: { id: 1 } }, () => {});
+  await new Promise((r) => setTimeout(r, 10));
+  await fireIdle();
+  ok('...and is released once the editor says it is done',
+    names().includes('closeDocument'), names().join(','));
 }
 
 console.log(`\nbackground: ${pass} passed, ${failures.length} failed\n`);

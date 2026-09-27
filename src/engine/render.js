@@ -18,9 +18,12 @@
 
   const geometry = NC.require('geometry');
 
-  /* Map viewport CSS coordinates onto the cropped device-pixel canvas. */
-  function cssSpace(ctx, rect, m) {
-    ctx.setTransform(m.scaleX, 0, 0, m.scaleY, -rect.x * m.scaleX, -rect.y * m.scaleY);
+  /* Map viewport CSS coordinates onto the cropped canvas. `k` is the canvas's
+   * resolution relative to the device-pixel crop: 1 for an export, less for an
+   * on-screen preview that does not need every device pixel. */
+  function cssSpace(ctx, rect, m, k = 1) {
+    const sx = m.scaleX * k, sy = m.scaleY * k;
+    ctx.setTransform(sx, 0, 0, sy, -rect.x * sx, -rect.y * sy);
   }
 
   function deviceSpace(ctx) {
@@ -124,36 +127,92 @@
     ctx.restore();
   }
 
+  /* One scratch canvas for the whole module, resized in place.
+   *
+   * A fresh canvas per blur, per render, is an allocation and a full-resolution
+   * copy multiplied by the number of blurs on the frame -- and render() runs on
+   * every pointermove of every stroke, not just at export. Sharing it is safe
+   * because each blur still copies the LIVE canvas at the moment it draws, so
+   * stacked blurs compound exactly as before; only the allocation is reused. */
+  let scratch = null;
+  let tiny = null;
+
+  function sized(c, w, h) {
+    const ctx = c.getContext('2d');
+    if (c.width !== w || c.height !== h) {
+      // Assigning either dimension already clears the canvas.
+      c.width = w;
+      c.height = h;
+    } else {
+      ctx.clearRect(0, 0, w, h);
+    }
+    return ctx;
+  }
+
+  /* Only the region a blur can reach is copied, not the whole canvas: the
+   * blurred rect plus the filter's reach on every side. On a large frame the
+   * full copy was most of the cost of every blur on every repaint. */
+  function snapshotOf(canvas, x, y, w, h) {
+    if (!scratch) scratch = document.createElement('canvas');
+    sized(scratch, w, h).drawImage(canvas, x, y, w, h, 0, 0, w, h);
+    return scratch;
+  }
+
   /* Redaction, not decoration: this replaces the pixels with a blurred copy of
    * themselves, so the original values are not recoverable from the export.
    * Drawing a semi-transparent grey box over them would leave them in the file.
    *
-   * Runs in device space and samples from a snapshot of the canvas, so stacked
+   * Runs in canvas space and samples from a snapshot of the canvas, so stacked
    * blurs compound instead of each sampling the pristine base.
+   *
+   * Two layers, because a Gaussian alone leaks at the canvas edge. The filter
+   * treats everything past the edge as transparent, so wherever the blurred
+   * rect touches the edge of the frame its blur comes out translucent -- and
+   * composited over the ORIGINAL pixels, which then show through. A region
+   * blurred in the corner of a "capture visible page" kept a sharp ghost of
+   * what it was meant to hide. So the rect is first overwritten with an
+   * opaque, heavily downsampled copy of itself, and the Gaussian lands on that:
+   * where it thins out, what shows through is already destroyed.
    */
-  function drawBlur(ctx, op, { canvas, rect, m }) {
+  function drawBlur(ctx, op, { canvas, rect, m, k }) {
     const dev = geometry.toDevice(
       geometry.clampToViewport(op.rect, m.cssWidth, m.cssHeight), m);
-    // Same crop offset the base image was drawn with.
-    const base = geometry.toDevice(rect, m);
-    const x = dev.x - base.x, y = dev.y - base.y;
     if (dev.w <= 0 || dev.h <= 0) return;
+    // Same crop offset the base image was drawn with, then into canvas pixels.
+    const base = geometry.toDevice(rect, m);
+    const x0 = Math.max(0, Math.round((dev.x - base.x) * k));
+    const y0 = Math.max(0, Math.round((dev.y - base.y) * k));
+    const x1 = Math.min(canvas.width, Math.round((dev.x + dev.w - base.x) * k));
+    const y1 = Math.min(canvas.height, Math.round((dev.y + dev.h - base.y) * k));
+    const w = x1 - x0, h = y1 - y0;
+    if (w <= 0 || h <= 0) return;
 
-    const snapshot = document.createElement('canvas');
-    snapshot.width = canvas.width;
-    snapshot.height = canvas.height;
-    snapshot.getContext('2d').drawImage(canvas, 0, 0);
+    /* Radius scales with the region and with DPR: a fixed pixel blur that hides
+     * 12px text leaves 40px headlines readable. */
+    const radius = Math.max(op.radius ?? 8, Math.min(dev.w, dev.h) / 12) *
+      Math.max(1, m.scaleX) * k;
+
+    const reach = Math.ceil(radius * 2);
+    const sx = Math.max(0, x0 - reach), sy = Math.max(0, y0 - reach);
+    const sw = Math.min(canvas.width, x1 + reach) - sx;
+    const sh = Math.min(canvas.height, y1 + reach) - sy;
+    const snapshot = snapshotOf(canvas, sx, sy, sw, sh);
+
+    if (!tiny) tiny = document.createElement('canvas');
+    const cell = Math.max(2, radius);
+    const tw = Math.max(1, Math.round(w / cell));
+    const th = Math.max(1, Math.round(h / cell));
+    sized(tiny, tw, th).drawImage(snapshot, x0 - sx, y0 - sy, w, h, 0, 0, tw, th);
 
     deviceSpace(ctx);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(x, y, dev.w, dev.h);
+    ctx.rect(x0, y0, w, h);
     ctx.clip();
-    /* Radius scales with the region and with DPR: a fixed pixel blur that hides
-     * 12px text leaves 40px headlines readable. */
-    const radius = Math.max(op.radius ?? 8, Math.min(dev.w, dev.h) / 12) * Math.max(1, m.scaleX);
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(tiny, 0, 0, tw, th, x0, y0, w, h);
     ctx.filter = `blur(${radius}px)`;
-    ctx.drawImage(snapshot, 0, 0);
+    ctx.drawImage(snapshot, 0, 0, sw, sh, sx, sy, sw, sh);
     ctx.restore();
     ctx.filter = 'none';
   }
@@ -168,7 +227,7 @@
   function drawOp(ctx, op, env) {
     if (op.tool === 'blur') {
       drawBlur(ctx, op, env);
-      cssSpace(ctx, env.rect, env.m);
+      cssSpace(ctx, env.rect, env.m, env.k);
       return;
     }
     const paint = PAINTERS[op.tool];
@@ -176,21 +235,30 @@
   }
 
   /* Compose the frame: base bitmap cropped to the selection, then every op
-   * replayed over it. Returns the device rect that was used. */
-  function render(canvas, { bitmap, metrics, rect, ops }) {
+   * replayed over it. Returns the device rect that was used.
+   *
+   * `resolution` below 1 renders a smaller canvas of the same picture. The
+   * export always runs at 1. The on-screen preview in the editor window does
+   * not: there a full-page capture is fitted into the window at a fraction of
+   * its size, and rendering all of its device pixels -- up to 16384 tall --
+   * on every pointermove is what made drawing on one crawl. */
+  function render(canvas, { bitmap, metrics, rect, ops, resolution = 1 }) {
     const dev = geometry.toDevice(rect, metrics);
     if (dev.w <= 0 || dev.h <= 0) return dev;
 
-    if (canvas.width !== dev.w) canvas.width = dev.w;
-    if (canvas.height !== dev.h) canvas.height = dev.h;
+    const k = resolution > 0 && resolution < 1 ? resolution : 1;
+    const cw = Math.max(1, Math.round(dev.w * k));
+    const ch = Math.max(1, Math.round(dev.h * k));
+    if (canvas.width !== cw) canvas.width = cw;
+    if (canvas.height !== ch) canvas.height = ch;
 
     const ctx = canvas.getContext('2d');
     deviceSpace(ctx);
-    ctx.clearRect(0, 0, dev.w, dev.h);
-    ctx.drawImage(bitmap, dev.x, dev.y, dev.w, dev.h, 0, 0, dev.w, dev.h);
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.drawImage(bitmap, dev.x, dev.y, dev.w, dev.h, 0, 0, cw, ch);
 
-    const env = { canvas, rect, m: metrics, dev };
-    cssSpace(ctx, rect, metrics);
+    const env = { canvas, rect, m: metrics, dev, k };
+    cssSpace(ctx, rect, metrics, k);
     for (const op of ops) drawOp(ctx, op, env);
     deviceSpace(ctx);
 

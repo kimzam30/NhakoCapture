@@ -23,7 +23,13 @@ async function dataUrlToBlob(dataUrl) {
 }
 
 /* Rung 1: a real image/png clipboard flavour. This is the one that lets you
- * paste into an image editor. */
+ * paste into an image editor.
+ *
+ * In practice Chromium refuses it here: navigator.clipboard.write requires a
+ * focused document, and an offscreen document is never focused. That is why
+ * copies are now written by the page or editor window first (see
+ * src/lib/clipboard.js), and this document is only reached from plain
+ * http:// pages, where the page itself has no Clipboard API. */
 async function writeViaClipboardApi(blob) {
   await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
   return 'clipboard-api';

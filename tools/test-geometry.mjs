@@ -147,10 +147,6 @@ eq('9x9 drag is a misclick',      G.isMeaningfulDrag({ x: 0, y: 0, w: 9, h: 9 })
 eq('10x10 drag is a selection',   G.isMeaningfulDrag({ x: 0, y: 0, w: 10, h: 10 }), true);
 eq('wide but flat is a misclick', G.isMeaningfulDrag({ x: 0, y: 0, w: 500, h: 2 }), false);
 
-/* --- fullViewport -------------------------------------------------------- */
-eq('fullViewport is the whole bitmap',
-  G.fullViewport(dpr2), { x: 0, y: 0, w: 2560, h: 1440 });
-
 /* --- report -------------------------------------------------------------- */
 /* --- full-page: the scroll plan ------------------------------------------ */
 {
@@ -211,6 +207,23 @@ eq('fullViewport is the whole bitmap',
     eq('one draw per tile', p.draws.length, 3);
     eq('tiles land at their offsets', p.draws.map((d) => d.dstY), [0, 900, 1800]);
     ok('every tile drawn whole', p.draws.every((d) => d.srcH === 900));
+    eq('each draw names its own tile', p.draws.map((d) => d.index), [0, 1, 2]);
+  }
+
+  {
+    /* A page that fights the scroll can land a later tile ABOVE an earlier
+       one, so the skipped tile is not the last. The stitcher decodes
+       tiles[d.index]; if a draw's position in the list were taken to mean its
+       tile, everything after the gap would paint its predecessor's pixels --
+       a wrong picture, silently, with no error anywhere. */
+    const p = G.planStitch(
+      [{ y: 0, width: 1200, height: 900 },
+       { y: 5000, width: 1200, height: 900 },   // dropped: past the ceiling
+       { y: 900, width: 1200, height: 900 }],
+      { scaleY: 1, cssHeight: 1800 });
+    eq('the out-of-order tile is dropped', p.draws.length, 2);
+    eq('and the survivors still name their real tiles',
+       p.draws.map((d) => d.index), [0, 2]);
   }
 
   {

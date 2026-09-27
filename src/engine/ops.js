@@ -80,6 +80,20 @@
         notify();
       },
 
+      /* Put every op through `fn`, in the undo stack as well as the live list.
+       *
+       * Ops are recorded in the coordinate space of the surface they were
+       * drawn on, and that space can be replaced underneath them -- the
+       * fallback editor re-fits the capture when its window is resized. The
+       * undo stack has to come along, or undoing after a resize restores a
+       * mark to where it would have been in a space that no longer exists. */
+      remap(fn) {
+        if (!ops.length && !undone.length) return;
+        ops = ops.map(fn);
+        undone = undone.map(fn);
+        notify();
+      },
+
       get all() { return ops; },
       get length() { return ops.length; },
       get canUndo() { return ops.length > 0; },
@@ -87,5 +101,35 @@
     };
   }
 
-  NC.define('ops', { create });
+  /* Multiply every coordinate and every size in an op by `k`.
+   *
+   * Pure, and returns a new op rather than mutating: the caller may be holding
+   * the old one in an undo stack. Exhaustive over the fields render.js knows
+   * how to paint -- a tool that adds a new geometric field without adding it
+   * here would keep its old geometry and drift away from what it marked. */
+  function scaleOp(op, k) {
+    if (!(k > 0) || k === 1) return op;
+    const point = ([x, y]) => [x * k, y * k];
+    const next = { ...op };
+
+    if (op.points) next.points = op.points.map(point);
+    if (op.from) next.from = point(op.from);
+    if (op.to) next.to = point(op.to);
+    if (op.at) next.at = point(op.at);
+    if (op.rect) {
+      next.rect = {
+        x: op.rect.x * k, y: op.rect.y * k,
+        w: op.rect.w * k, h: op.rect.h * k,
+      };
+    }
+    /* Stroke weight and text size are in the same space as the coordinates,
+     * so a mark keeps its proportions rather than growing heavier as the
+     * capture is scaled down. */
+    if (typeof op.size === 'number') next.size = op.size * k;
+    if (typeof op.radius === 'number') next.radius = op.radius * k;
+
+    return next;
+  }
+
+  NC.define('ops', { create, scaleOp });
 })();

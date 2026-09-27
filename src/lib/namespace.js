@@ -9,6 +9,15 @@
  *
  * This file must be first in that order, and must be safe to run repeatedly:
  * pressing Ctrl+Shift+5 twice re-injects every file.
+ *
+ * Every injection builds the namespace FROM SCRATCH. It used to keep the
+ * resident modules whenever the version string matched, which is exactly
+ * wrong after the extension is reloaded or updated: the isolated world
+ * survives the reload, so the old modules stayed, still holding the OLD
+ * chrome.runtime -- an invalidated one. Their message listener could never
+ * hear the new service worker again, the handoff failed, and every capture on
+ * that tab silently fell back to the editor window until the tab was
+ * reloaded. Re-evaluating a dozen small IIFEs costs nothing by comparison.
  */
 (() => {
   'use strict';
@@ -17,19 +26,17 @@
   const existing = globalThis.NhakoCapture;
 
   if (existing) {
-    if (existing.version === VERSION) {
-      // Same build, already resident. Keep the modules, flag the re-entry so
-      // inject.js knows to tear down the live overlay rather than stack a
-      // second one on top of it.
-      existing.reinjected = true;
-      return;
-    }
-    // A different build is live -- almost certainly a reload during
-    // development. Tear it down before replacing, or its listeners outlive it.
+    /* Take down whatever the previous build left running -- its overlay, and
+     * its runtime listener -- before replacing it, or they outlive it. */
     try {
       existing.destroy?.();
     } catch (err) {
-      console.warn('[NhakoCapture] previous build failed to tear down:', err);
+      console.warn('[NhakoCapture] previous overlay failed to tear down:', err);
+    }
+    try {
+      existing.detach?.();
+    } catch {
+      /* An orphaned runtime throws here; its listener is already dead. */
     }
   }
 
@@ -38,7 +45,6 @@
   globalThis.NhakoCapture = {
     version: VERSION,
     modules,
-    reinjected: false,
 
     define(name, value) {
       modules[name] = value;
@@ -58,5 +64,7 @@
 
     // Set by inject.js once an overlay is mounted; null when nothing is up.
     destroy: null,
+    // Set by inject.js: removes its runtime message listener.
+    detach: null,
   };
 })();

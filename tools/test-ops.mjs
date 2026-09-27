@@ -123,5 +123,53 @@ const make = () => { notified = 0; return opsModule.create({ onChange: () => not
   eq('clearing an empty list does not notify', notified, before);
 }
 
+/* --- remap ----------------------------------------------------------------
+ *
+ * The fallback editor re-fits its capture when the window is resized, which
+ * replaces the coordinate space every op was recorded in. Marks have to follow
+ * the image -- and so does the undo stack, or undoing after a resize restores a
+ * mark into a space that no longer exists.
+ */
+{
+  const o = make();
+  o.add({ tool: 'arrow', from: [10, 20], to: [30, 40], size: 4 });
+  o.add({ tool: 'text', at: [50, 60], size: 16 });
+  o.undo();                                   // one op live, one undone
+
+  o.remap((op) => opsModule.scaleOp(op, 2));
+
+  eq('remap scales the live op', o.all[0].from, [20, 40]);
+  eq('...including its stroke weight', o.all[0].size, 8);
+  o.redo();
+  eq('remap reached the undo stack too', o.all[1].at, [100, 120]);
+  eq('...and its size', o.all[1].size, 32);
+
+  const empty = make();          // resets the notification counter
+  empty.remap((op) => op);
+  eq('remapping an empty list does not notify', notified, 0);
+}
+
+/* --- scaleOp -------------------------------------------------------------- */
+{
+  const S = opsModule.scaleOp;
+  const arrow = { tool: 'arrow', from: [1, 2], to: [3, 4], size: 2 };
+
+  eq('a scale of 1 is a no-op', S(arrow, 1), arrow);
+  eq('and does not copy', S(arrow, 1) === arrow, true);
+  eq('a nonsense scale is refused rather than applied', S(arrow, 0), arrow);
+
+  eq('pencil points scale',
+    S({ tool: 'pencil', points: [[1, 2], [3, 4]] }, 3).points, [[3, 6], [9, 12]]);
+  eq('blur rects scale on all four fields',
+    S({ tool: 'blur', rect: { x: 1, y: 2, w: 3, h: 4 } }, 2).rect,
+    { x: 2, y: 4, w: 6, h: 8 });
+  eq('blur radius scales with the region',
+    S({ tool: 'blur', rect: { x: 0, y: 0, w: 1, h: 1 }, radius: 8 }, 2).radius, 16);
+
+  const original = { tool: 'arrow', from: [1, 2], to: [3, 4] };
+  S(original, 2);
+  eq('the original op is never mutated', original.from, [1, 2]);
+}
+
 console.log(`\nops: ${pass} passed, ${failures.length} failed\n`);
 if (failures.length) { for (const f of failures) console.error('  FAIL  ' + f); process.exit(1); }

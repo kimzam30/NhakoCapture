@@ -285,9 +285,21 @@ async function main() {
     await shoot(cdp, '02-selected');
 
     /* --- misclick is discarded ------------------------------------------- */
-    await drag(cdp, [900, 120], [905, 125]);
-    await sleep(200);
-    check('a 5px drag is discarded as a misclick', await rectOf(cdp) === 'null', await rectOf(cdp));
+    /* ...and does NOT take the existing frame with it. Clearing the frame
+       also drops every mark in it, with no undo, so a stray click outside
+       the frame used to throw the user's work away. */
+    {
+      const before = await rectOf(cdp);
+      await drag(cdp, [900, 120], [905, 125]);
+      await sleep(200);
+      check('a 5px drag beside a frame leaves the frame alone',
+        await rectOf(cdp) === before, await rectOf(cdp));
+      await key(cdp, 'Escape');
+      await drag(cdp, [900, 120], [905, 125]);
+      await sleep(200);
+      check('a 5px drag with no frame is discarded as a misclick',
+        await rectOf(cdp) === 'null', await rectOf(cdp));
+    }
 
     /* --- Escape steps back, then exits ----------------------------------- */
     await drag(cdp, [200, 200], [600, 500]);
@@ -592,6 +604,35 @@ async function main() {
       sBlurred < sSharp * 0.6,
       `stddev sharp=${Number(sSharp).toFixed(2)} blurred=${Number(sBlurred).toFixed(2)}`);
 
+    /* ...including at the edge of the frame. The blur filter treats pixels
+       past the canvas edge as transparent, so a blur touching the edge came
+       out translucent there and the sharp original showed through it. Striped
+       fixture, one row per stripe, measured down the outermost column. */
+    {
+      const edge = JSON.parse(await cdp.eval(`(() => {
+        const R = NhakoCapture.require('render'), G = NhakoCapture.require('geometry');
+        const src = document.createElement('canvas'); src.width = src.height = 200;
+        const sg = src.getContext('2d');
+        for (let y = 0; y < 200; y += 1) { sg.fillStyle = y % 4 < 2 ? '#000' : '#fff'; sg.fillRect(0, y, 200, 1); }
+        const m = G.measure(200, 200, 200, 200), rect = { x: 0, y: 0, w: 200, h: 200 };
+        const spread = (ops) => {
+          const c = document.createElement('canvas');
+          R.render(c, { bitmap: src, metrics: m, rect, ops });
+          const d = c.getContext('2d').getImageData(0, 20, 1, 160).data;
+          let n = 0, s = 0, s2 = 0;
+          for (let i = 0; i < d.length; i += 4) { n++; s += d[i]; s2 += d[i] * d[i]; }
+          return Math.sqrt(s2 / n - (s / n) ** 2);
+        };
+        return JSON.stringify({
+          sharp: spread([]),
+          blurred: spread([{ tool: 'blur', rect: { x: 0, y: 0, w: 60, h: 200 } }]),
+        });
+      })()`));
+      check('blur at the frame edge leaves nothing sharp showing through',
+        edge.blurred < edge.sharp * 0.2,
+        `stddev sharp=${edge.sharp.toFixed(1)} edge=${edge.blurred.toFixed(1)}`);
+    }
+
     await pickTool(cdp, 'Text');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 340, y: 500, button: 'left', buttons: 1, clickCount: 1 });
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 340, y: 500, button: 'left', buttons: 1, clickCount: 1 });
@@ -738,11 +779,95 @@ async function main() {
       await shadowEval(cdp, `return !sr.querySelector('.nc-loupe').hidden;`));
     await shoot(cdp, '06-zoom');
 
+    /* The magnifier must not move the thing it is magnifying.
+     *
+     * annotate.begin() had no case for 'zoom', so it returned false, the event
+     * fell through to selection.js, and the target inside the frame is the
+     * marquee -- every click with the magnifier dragged the capture frame
+     * instead. Silent, and on the tool least likely to be suspected. */
+    {
+      const framedBefore = await rectOf(cdp);
+      await drag(cdp, [600, 380], [700, 300]);
+      await sleep(200);
+      check('clicking with the magnifier does not drag the frame',
+        (await rectOf(cdp)) === framedBefore,
+        `${framedBefore} -> ${await rectOf(cdp)}`);
+      check('...and does not draw an op either', (await opCount(cdp)) === 0,
+        String(await opCount(cdp)));
+
+      /* The click has to mean something, and parking the loupe is the only
+       * thing it can usefully mean on a surface pinned 1:1 to the page. */
+      const parkedAt = await shadowEval(cdp,
+        `const l = sr.querySelector('.nc-loupe'); return l.style.left + ',' + l.style.top;`);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 400, y: 500 });
+      await sleep(150);
+      check('a click parks the loupe instead of it following the cursor',
+        (await shadowEval(cdp,
+          `const l = sr.querySelector('.nc-loupe'); return l.style.left + ',' + l.style.top;`))
+          === parkedAt, parkedAt);
+
+      // Clicking again releases it, so the tool is not a one-way door.
+      await drag(cdp, [500, 420], [500, 420]);
+      await sleep(150);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 620, y: 340 });
+      await sleep(150);
+      check('clicking again releases it back to following the cursor',
+        (await shadowEval(cdp,
+          `const l = sr.querySelector('.nc-loupe'); return l.style.left;`)) === '620px',
+        await shadowEval(cdp, `return sr.querySelector('.nc-loupe').style.left;`));
+    }
+
     /* Escape releases the tool before clearing the frame */
     await key(cdp, 'Escape');
     check('Escape releases the tool first',
       (await cdp.eval(`NhakoCapture.require('overlay').session.annotate.tool`)) === null);
     check('and the frame survives', (await rectOf(cdp)) !== 'null');
+
+    /* --- audit regressions: marks and frame are not lost by accident -------
+     * Each of these was a way to silently lose work: marks vanishing when the
+     * pen was put down, a stray press outside the frame, a handle that could
+     * not be reached with a tool chosen, and a label discarded by clicking to
+     * place the next one. */
+    {
+      await pickTool(cdp, 'Arrow');
+      await drag(cdp, [320, 260], [520, 420]);
+      await sleep(200);
+      check('audit: an arrow is drawn', (await opCount(cdp)) === 1, String(await opCount(cdp)));
+
+      const framed = await rectOf(cdp);
+      await drag(cdp, [100, 660], [220, 720]);
+      await sleep(200);
+      check('audit: a stroke started outside the frame draws nothing',
+        (await opCount(cdp)) === 1, String(await opCount(cdp)));
+      check('audit: ...and leaves the frame where it was', (await rectOf(cdp)) === framed,
+        await rectOf(cdp));
+
+      await drag(cdp, [900, 560], [950, 600]);
+      await sleep(200);
+      check('audit: a handle resizes the frame with a tool still chosen',
+        (await rectOf(cdp)) === JSON.stringify({ x: 260, y: 200, w: 690, h: 400 }),
+        await rectOf(cdp));
+      check('audit: ...without drawing', (await opCount(cdp)) === 1, String(await opCount(cdp)));
+
+      await key(cdp, 'Escape');
+      const shown = await shadowEval(cdp, `return !sr.querySelector('.nc-annotate').hidden;`);
+      check('audit: putting the tool down keeps the marks on screen',
+        (await cdp.eval(`NhakoCapture.require('overlay').session.annotate.tool`)) === null && shown);
+
+      await pickTool(cdp, 'Text');
+      for (const [x, y] of [[400, 300], [420, 460]]) {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', buttons: 1, clickCount: 1 });
+        await sleep(250);
+        await cdp.send('Input.insertText', { text: 'label' });
+      }
+      check('audit: clicking to place a second label commits the first',
+        (await opCount(cdp)) === 2, String(await opCount(cdp)));
+      await pickTool(cdp, 'Pencil');
+      check('audit: switching tools commits the label in progress',
+        (await opCount(cdp)) === 3, String(await opCount(cdp)));
+      await key(cdp, 'Escape');
+    }
 
     /* --- narrow window: pill collapses to icons -------------------------- */
     await key(cdp, 'Escape'); await key(cdp, 'Escape');
@@ -1240,6 +1365,17 @@ async function main() {
               return (typeof r === 'function' ? r(m) : r) ?? { ok: true }; },
           },
         };
+        /* The direct write is switched off by default so the checks below
+           exercise the background route and its three outcomes. It is
+           switched back on, once, for the check that proves it is preferred. */
+        globalThis.__directCopy = false;
+        globalThis.__directWrites = 0;
+        if (navigator.clipboard) {
+          navigator.clipboard.write = async () => {
+            if (!globalThis.__directCopy) throw new Error('direct write disabled by the harness');
+            globalThis.__directWrites += 1;
+          };
+        }
         const realFetch = globalThis.fetch;
         globalThis.fetch = async (u) => String(u).startsWith('nc-style:')
           ? { ok: true, text: async () => ${JSON.stringify(css)} }
@@ -1334,6 +1470,22 @@ async function main() {
 
       check('Copy from the fallback window routes to the background',
         sentFromFallback.includes('nc:copy'), JSON.stringify(sentFromFallback));
+
+      /* ...when it has to. Given a working clipboard, the window writes the
+         PNG itself: it is focused and the offscreen document never is, which
+         is why the offscreen route only ever produced an HTML-only copy. */
+      {
+        await cdp.eval(`globalThis.__sent = []; globalThis.__directCopy = true;`);
+        await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
+        await sleep(300);
+        const direct = JSON.parse(await cdp.eval(`JSON.stringify({
+          writes: globalThis.__directWrites, sent: globalThis.__sent.map(m => m.type) })`));
+        check('editor: a real PNG is written directly when the page can',
+          direct.writes === 1 && !direct.sent.includes('nc:copy'), JSON.stringify(direct));
+        check('editor: ...and reported as a clean copy',
+          (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied!');
+        await cdp.eval(`globalThis.__directCopy = false;`);
+      }
 
       /* T12: the three copy outcomes must be as distinguishable here as they
          are in the overlay. This window is where restricted-page and full-page
@@ -1437,6 +1589,122 @@ async function main() {
           JSON.stringify(survived));
 
         await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id2 });
+      }
+
+      /* Resizing the window must not destroy the capture.
+       *
+       * The shim above answers storage.local.get with the same fixture every
+       * time, which is what let this bug live: the real thing is a ONE-SHOT --
+       * the editor removes the keys the moment it has read them, so nothing is
+       * left to re-read. The old resize handler reloaded the window to re-fit,
+       * the reload found an empty store, and dragging a corner replaced the
+       * user's screenshot with "Nothing to edit".
+       *
+       * So this shim honours the removal, which is the only way the test can
+       * tell a remount from a reload. */
+      {
+        // `identifier` is already gone -- the capped-capture block above
+        // removed it before layering its own shim, and removing it twice
+        // throws "Script not found".
+        const oneShotShim = `
+          globalThis.__sent = [];
+          globalThis.__reads = 0;
+          let store = ${JSON.stringify(stored)};
+          globalThis.chrome = {
+            storage: { local: {
+              get: async () => { globalThis.__reads += 1; return { ...store }; },
+              remove: async () => { store = {}; },
+            }},
+            runtime: {
+              getURL: (p) => 'nc-style:' + p,
+              sendMessage: async (m) => { globalThis.__sent.push(m); return { ok: true }; },
+            },
+          };
+          const realFetch = globalThis.fetch;
+          globalThis.fetch = async (u) => String(u).startsWith('nc-style:')
+            ? { ok: true, text: async () => ${JSON.stringify(css)} }
+            : realFetch(u);
+        `;
+        const { identifier: id3 } = await cdp.send(
+          'Page.addScriptToEvaluateOnNewDocument', { source: oneShotShim });
+
+        await cdp.send('Emulation.clearDeviceMetricsOverride');
+        await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+        await sleep(900);
+
+        // Draw a mark, so the remount has annotation state to carry as well.
+        await cdp.eval(`(() => {
+          const sr = document.getElementById('nhako-capture-host').shadowRoot;
+          [...sr.querySelectorAll('.nc-tool')].find(b =>
+            b.getAttribute('aria-label') === 'Arrow').click();
+        })()`);
+        const root = await cdp.eval(`(() => {
+          const b = document.getElementById('nhako-capture-host')
+            .shadowRoot.querySelector('.nc-root').getBoundingClientRect();
+          return JSON.stringify({ x: Math.round(b.left), y: Math.round(b.top),
+                                  w: Math.round(b.width), h: Math.round(b.height) });
+        })()`).then(JSON.parse);
+        await drag(cdp,
+          [root.x + Math.round(root.w * 0.3), root.y + Math.round(root.h * 0.3)],
+          [root.x + Math.round(root.w * 0.5), root.y + Math.round(root.h * 0.5)]);
+        await sleep(150);
+
+        // A marker on the window object. It cannot survive a navigation, which
+        // is precisely what makes it able to detect one.
+        await cdp.eval(`globalThis.__documentMarker = 'original'`);
+
+        const before = JSON.parse(await cdp.eval(`(() => {
+          const h = document.getElementById('nhako-capture-host');
+          const m = h.shadowRoot.querySelector('.nc-marquee');
+          return JSON.stringify({
+            frameW: m && Math.round(m.getBoundingClientRect().width),
+            boxW: Math.round(h.getBoundingClientRect().width),
+          });
+        })()`));
+
+        // The resize itself, then past the handler's 200ms debounce.
+        await cdp.send('Emulation.setDeviceMetricsOverride', {
+          width: 780, height: 620, deviceScaleFactor: 1, mobile: false,
+        });
+        await cdp.eval(`window.dispatchEvent(new Event('resize'))`);
+        await sleep(700);
+
+        const after = JSON.parse(await cdp.eval(`(() => {
+          const h = document.getElementById('nhako-capture-host');
+          const sr = h && h.shadowRoot;
+          const m = sr && sr.querySelector('.nc-marquee');
+          return JSON.stringify({
+            host: !!h,
+            empty: getComputedStyle(document.getElementById('empty')).display,
+            backdrop: !!(sr && sr.querySelector('img.nc-backdrop')),
+            framed: !!(m && !m.hidden),
+            frameW: m && Math.round(m.getBoundingClientRect().width),
+            boxW: h && Math.round(h.getBoundingClientRect().width),
+            canvas: !!(sr && sr.querySelector('canvas.nc-annotate')),
+            marker: globalThis.__documentMarker ?? null,
+            navType: performance.getEntriesByType('navigation')[0]?.type ?? null,
+          });
+        })()`));
+
+        check('a resize remounts the editor rather than reloading the window',
+          after.navType !== 'reload' && after.marker === 'original',
+          `navType=${after.navType}, marker=${after.marker}`);
+        check('the capture survives a resize', after.host && after.backdrop,
+          JSON.stringify(after));
+        check('...instead of falling back to the empty state',
+          after.empty === 'none', after.empty);
+        check('...and it is re-fitted, not left at the old size',
+          after.boxW > 0 && after.boxW <= 780, String(after.boxW));
+        check('the frame survives with it', after.framed === true,
+          JSON.stringify(after));
+        check('...rescaled into the new fit rather than kept at its old size',
+          after.frameW > 0 && Math.abs(after.frameW - after.boxW) <= 2,
+          `frame ${before.frameW}->${after.frameW}, box ${before.boxW}->${after.boxW}`);
+        check('the annotation canvas is still mounted', after.canvas === true,
+          JSON.stringify(after));
+
+        await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id3 });
+        await cdp.send('Emulation.clearDeviceMetricsOverride');
       }
     }
 

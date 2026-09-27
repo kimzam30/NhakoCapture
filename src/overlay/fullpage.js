@@ -138,6 +138,13 @@
     const root = document.documentElement;
     const record = snapshot(root);
     root.style.setProperty('overflow', 'visible', 'important');
+    /* Lifting the lock brings the page's scrollbar back, and with classic
+     * (non-overlay) scrollbars captureVisibleTab photographs it -- in every
+     * tile, with the thumb a little further down each time, so the stitched
+     * image had a scrollbar striped down its right edge. Scrolling is driven
+     * programmatically here, so the bar is never needed. Restored with the
+     * rest of the record. */
+    root.style.setProperty('scrollbar-width', 'none', 'important');
     return record;
   }
 
@@ -192,6 +199,11 @@
    * sweep itself is what makes the document grow. */
   async function lazyLoadPrePass({ viewHeight, shouldCancel, stepDelay }) {
     let lastHeight = -1;
+
+    /* From the top, not from wherever the user happened to be. A page opened
+     * at an anchor, or with its scroll position restored, has never shown the
+     * content above that point either. */
+    await settleScroll(0);
 
     for (let step = 0; step < PREPASS_MAX_STEPS; step += 1) {
       if (shouldCancel?.()) throw new Cancelled();

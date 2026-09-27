@@ -112,22 +112,36 @@
     /* --- drawing a new frame --------------------------------------------- */
     const at = (e) => ({ x: e.clientX - origin.x, y: e.clientY - origin.y });
 
+    /* A press outside an existing frame does not touch it until the pointer
+     * has actually travelled -- and if the drag ends up too small to be a
+     * frame, the old one is put back rather than cleared. Clearing it fired
+     * the "frame gone" path, which drops every mark drawn in it, with no undo:
+     * one stray click outside the frame silently threw the user's work away. */
     function beginDraw(event) {
-      mode = 'drawing';
       const from = at(event);
+      const previous = rect ? { ...rect } : null;
+      let started = previous === null;
+      if (started) mode = 'drawing';
       drag = {
         pointerId: event.pointerId,
         update: (e) => {
           const to = at(e);
-          rect = clamp(geometry.normalizeDrag(from.x, from.y, to.x, to.y));
+          const next = clamp(geometry.normalizeDrag(from.x, from.y, to.x, to.y));
+          if (!started) {
+            if (next.w < geometry.MIN_DRAG && next.h < geometry.MIN_DRAG) return;
+            started = true;
+            mode = 'drawing';
+          }
+          rect = next;
           paint();
           emit();
         },
         finish: () => {
+          if (!started) return;          // a click: nothing changed
           if (!rect || !geometry.isMeaningfulDrag(rect)) {
             // Too small to be intentional. Treat as a misclick, not a selection.
-            rect = null;
-            mode = 'idle';
+            rect = previous;
+            mode = previous ? 'adjusting' : 'idle';
             paint();
           } else {
             mode = 'adjusting';
@@ -272,7 +286,6 @@
       selectAll: () => set({ x: 0, y: 0, w: view.width, h: view.height }),
       get rect() { return rect; },
       get mode() { return mode; },
-      get dragging() { return drag !== null; },
     };
   }
 

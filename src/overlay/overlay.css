@@ -276,8 +276,9 @@
 .nc-root[data-tool='text'] .nc-marquee { cursor: text; }
 .nc-root[data-tool='zoom'] .nc-marquee { cursor: zoom-in; }
 
-/* Handles would only get in the way once a tool is chosen. */
-.nc-root[data-tool]:not([data-tool='']) .nc-handle { display: none; }
+/* Handles stay live with a tool chosen: inject.js routes a press on one to
+   the frame, not the pen, so the edges can be adjusted without first putting
+   the tool down. Marks are anchored to the page, so reframing never moves them. */
 
 /* --- magnifier ------------------------------------------------------------
  * The zoom tool. Opera zooms its editor canvas, which cannot work here: this
@@ -293,7 +294,7 @@
   border-radius: 50%;
   border: 2px solid var(--nc-accent-bright);
   box-shadow: var(--nc-shadow-popover);
-  background-repeat: no-repeat;
+  background: var(--nc-surface-sunken);
   image-rendering: pixelated;
   pointer-events: none;
   z-index: var(--nc-z-popover);

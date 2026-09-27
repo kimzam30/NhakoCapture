@@ -88,11 +88,6 @@
     };
   }
 
-  /* The whole viewport, in device pixels. Used by "Capture visible page". */
-  function fullViewport(m) {
-    return { x: 0, y: 0, w: m.bitmapWidth, h: m.bitmapHeight };
-  }
-
   /* --- full-page tiling ---------------------------------------------------
    *
    * Everything below is pure arithmetic over numbers the caller measured, for
@@ -172,16 +167,26 @@
     const claimed = Number.isFinite(cssHeight) ? Math.round(cssHeight * scaleY) : Infinity;
     const height = Math.min(Math.min(claimed, coverage), ceiling);
 
+    /* Each draw carries the index of the tile it came from.
+     *
+     * Without it the caller has to assume draws and tiles stay index-aligned,
+     * and they do not: any tile past the ceiling is skipped here. Skips are
+     * only ever trailing while offsets ascend -- but offsets are read back
+     * from where the page ACTUALLY scrolled, and a page that fights the scroll
+     * can land a later tile above an earlier one. One dropped draw in the
+     * middle then shifts every tile after it up by one, which does not fail,
+     * it silently stitches the wrong picture. */
     const draws = [];
-    for (const t of placed) {
-      if (t.top >= height) continue;              // entirely past the ceiling
+    placed.forEach((t, index) => {
+      if (t.top >= height) return;                // entirely past the ceiling
       const srcHeight = Math.min(t.height, height - t.top);
-      if (srcHeight <= 0) continue;
+      if (srcHeight <= 0) return;
       draws.push({
+        index,
         srcX: 0, srcY: 0, srcW: Math.min(t.width, width), srcH: srcHeight,
         dstX: 0, dstY: t.top, dstW: Math.min(t.width, width), dstH: srcHeight,
       });
-    }
+    });
 
     return { width, height, draws };
   }
@@ -194,18 +199,12 @@
     return rect.w >= min && rect.h >= min;
   }
 
-  function hasArea(rect) {
-    return rect.w > 0 && rect.h > 0;
-  }
-
   NC.define('geometry', {
     measure,
     normalizeDrag,
     clampToViewport,
     toDevice,
-    fullViewport,
     isMeaningfulDrag,
-    hasArea,
     MIN_DRAG,
     planStops,
     heightCeiling,

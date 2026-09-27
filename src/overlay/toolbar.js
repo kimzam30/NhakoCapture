@@ -190,7 +190,6 @@
     layer.appendChild(pill);
 
     return {
-      element: pill,
       setHint(text) { baseHint = text; hint.textContent = text; },
       /* Separate from setHint on purpose. The hint is also the status channel
        * -- "Copying…", "Saved", the degraded-clipboard note -- so a notice put
@@ -204,8 +203,6 @@
       },
       /* Bottom edge in viewport CSS px, so the rail can keep clear of it. */
       bottom() { return pill.getBoundingClientRect().bottom + 8; },
-      hide() { pill.style.display = 'none'; },
-      show() { pill.style.display = ''; },
       /* Keeps the pill out of the way when a selection is drawn underneath it.
        *
        * getBoundingClientRect is viewport-space but `rect` is stage-local, so

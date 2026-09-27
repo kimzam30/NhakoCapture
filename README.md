@@ -49,7 +49,7 @@ NhakoCapture rebuilds that reflex.
 | **Annotate in place** | Pencil, arrow, blur, highlight and text — over the page you are already looking at. Seven inks, three stroke weights. |
 | **Real redaction** | Blur replaces pixels with a blurred copy of themselves. The original values are not recoverable from the exported file. |
 | **Full undo** | Every mark is a record, not paint. `Ctrl+Z` / `Ctrl+Shift+Z` all the way back. |
-| **Copy or save** | Straight to the clipboard, or a real Save-As dialog that lets you pick where it goes. |
+| **Copy or save** | Straight to the clipboard as a real PNG, or a real Save-As dialog that lets you pick where it goes. |
 | **Whole page as PNG** | Scroll-and-stitch, with sticky headers neutralised and lazy images woken first. |
 | **Whole page as PDF** | The entire document, not just the viewport. |
 | **Private by construction** | No network calls, no accounts, no telemetry, no analytics. Nothing leaves the machine. |
@@ -82,7 +82,10 @@ The page freezes under a dim scrim. From there:
 - **Save page as PDF** takes the entire document as a PDF instead.
 
 Once you have a frame, the tool rail appears. Pick a tool, mark it up, then
-**Copy** or **Save**.
+**Copy** or **Save**. The frame's handles keep working while a tool is chosen,
+and a stray click outside the frame leaves the frame — and your marks — alone.
+
+Pressing `Ctrl+Shift+5` again while the overlay is up closes it.
 
 ### About full page
 
@@ -107,7 +110,7 @@ It is a second gear, not the default, and it behaves like one:
 
 | Key | Does |
 |---|---|
-| `Ctrl+Shift+5` | Open NhakoCapture |
+| `Ctrl+Shift+5` | Open NhakoCapture — press again to close it |
 | `P` `A` `B` `H` `T` `Z` | Pencil · Arrow · Blur · Highlight · Text · Zoom |
 | `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
 | `Ctrl+C` | Copy and close |
@@ -127,7 +130,7 @@ Every permission, and why it is there. The last one deserves an explanation.
 | `scripting` | Inject the overlay into the page you are capturing. |
 | `storage` | Used by the restricted-page fallback editor. |
 | `downloads` | Open a real Save-As dialog rather than dropping files silently into your downloads folder. |
-| `offscreen` | Write images to the clipboard. A service worker has no Clipboard API, and a content script on an `http://` page is not a secure context, so `navigator.clipboard` does not exist there. |
+| `offscreen` | Clipboard fallback and blob URLs. Copies are written from the page itself when it is a secure context (every `https://` page); on a plain `http://` page `navigator.clipboard` does not exist, so the copy goes through an offscreen document instead — which can only place it on the clipboard as HTML. |
 | `debugger` | **Only** for `Save page as PDF`. Chromium exposes `Page.printToPDF` through the DevTools protocol and nowhere else. It is attached for the second the render takes and detached immediately in a `finally` block, and Chromium shows its "started debugging this browser" banner for that moment. If attaching fails, it falls back to the normal print dialog. It is never used for anything else. |
 
 ## How it works
@@ -143,7 +146,8 @@ src/
 ├── offscreen.js       clipboard writes and blob URLs
 ├── lib/
 │   ├── namespace.js   module registry (executeScript cannot use ES modules)
-│   └── geometry.js    CSS ⇄ device-pixel maths
+│   ├── geometry.js    CSS ⇄ device-pixel maths
+│   └── clipboard.js   writes the PNG from the focused page
 ├── engine/
 │   ├── ops.js         append-only annotation list; undo/redo
 │   ├── render.js      replays ops over the bitmap
@@ -214,7 +218,9 @@ Deliberately, and it is short:
 
 - **Zoom is a magnifier loupe, not a canvas zoom.** Opera's editor is a separate
   surface, so it can scale freely. This overlay sits 1:1 over the live page —
-  scaling it would desync the frame from the pixels it depicts.
+  scaling it would desync the frame from the pixels it depicts. The loupe
+  follows the cursor; click to park it somewhere and look properly, click again
+  to release it.
 - **No sticker or emoji picker.** An asset set and a picker UI for little return.
 - **No selfie camera.** It needs webcam permission, which is a poor trade for a
   tool whose main promise is that nothing leaves your machine.
@@ -231,7 +237,7 @@ Deliberately, and it is short:
 
 Version 2.0.0 is a ground-up rebuild of v1.0. Capture, framing, annotation,
 copy, save, PDF, full-page scroll-and-stitch and the restricted-page editor
-window are all implemented, with **435 unit checks and 190 browser checks**
+window are all implemented, with **467 unit checks and 213 browser checks**
 covering them (`./tools/test.sh`).
 
 The browser checks drive a real Chromium over the DevTools protocol: real
@@ -239,7 +245,9 @@ input, real shadow DOM, real computed styles. They are not a substitute for
 loading the extension in Brave, and the task list tracks which behaviours have
 been verified there and which have only been unit-tested.
 
-Remaining work is tracked in [`todo.md`](todo.md).
+The one piece of work still outstanding is that verification matrix: walking
+the full feature set in a real browser with the extension loaded unpacked,
+rather than in the harness.
 
 ## Credits
 

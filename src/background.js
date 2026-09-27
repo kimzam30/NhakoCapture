@@ -20,6 +20,7 @@ const OFFSCREEN_PATH = 'src/offscreen.html';
 const OVERLAY_FILES = [
   'src/lib/namespace.js',
   'src/lib/geometry.js',
+  'src/lib/clipboard.js',
   'src/engine/ops.js',
   'src/engine/render.js',
   'src/engine/stitch.js',
@@ -294,6 +295,18 @@ async function openFullPageEditor({ dataUrl, width, height, capped }, tabId) {
   }
 }
 
+/* True when an overlay was up on this tab and has now been told to close.
+ * A tab with no content script rejects with "Receiving end does not exist",
+ * which is the ordinary case and simply means there is nothing to dismiss. */
+async function dismissOverlay(tabId) {
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: 'nc:dismiss' }, { frameId: 0 });
+    return res?.dismissed === true;
+  } catch {
+    return false;
+  }
+}
+
 async function launch(tab) {
   if (!tab?.id) return;
 
@@ -301,6 +314,12 @@ async function launch(tab) {
   // suppression flag, or progress on this run would be silently swallowed.
   failingTabs.delete(tab.id);
   chrome.action.setBadgeText({ tabId: tab.id, text: '' }).catch(() => {});
+
+  /* A second press while the overlay is up closes it. Without this check the
+   * capture below photographed our own scrim and pill, and the "new" overlay
+   * froze a dimmed copy of the old one -- the one thing capturing first was
+   * supposed to make impossible. */
+  if (!isRestricted(tab.url) && await dismissOverlay(tab.id)) return;
 
   /* Capture first, always -- before any UI of ours exists, and before deciding
    * where the capture is going to be edited. */
@@ -345,7 +364,7 @@ async function launch(tab) {
   }
 
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText });
+    await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText }, { frameId: 0 });
   } catch (err) {
     console.warn('[NhakoCapture] overlay did not answer, using the editor window:', err);
     await openFallback(dataUrl, tab.id);
@@ -432,6 +451,43 @@ async function ensureOffscreen() {
   throw new Error('offscreen document did not become ready');
 }
 
+/* --- letting the offscreen document go ------------------------------------
+ *
+ * An offscreen document holds the extension's process open for as long as it
+ * exists, and every blob URL it has minted pins that whole image in memory
+ * alongside it. Nothing needs it between captures, so it is closed once it is
+ * genuinely idle: no blob outstanding, no download still waiting on one.
+ *
+ * Closing is safe precisely because ensureOffscreen already treats a missing
+ * document as a not-yet rather than a failure -- the next capture pays one
+ * handshake, which is the same cost it pays after Chromium evicts the worker.
+ *
+ * `outstandingBlobs` is a count rather than a set because the URLs themselves
+ * live in the offscreen document; this side only needs to know whether any are
+ * still owed a revoke. A URL the editor window never consumes leaves the count
+ * above zero and the document open -- which is exactly the old behaviour, so
+ * the worst case here is no worse than before. */
+const OFFSCREEN_IDLE_MS = 30000;
+let outstandingBlobs = 0;
+let offscreenIdleTimer = null;
+
+function scheduleOffscreenClose() {
+  clearTimeout(offscreenIdleTimer);
+  offscreenIdleTimer = setTimeout(async () => {
+    // A Save As dialog can stay open indefinitely; its blob must outlive it.
+    if (outstandingBlobs > 0 || pendingDownloads.size > 0) return;
+    try {
+      const contexts = await chrome.runtime.getContexts({
+        contextTypes: ['OFFSCREEN_DOCUMENT'],
+      });
+      if (contexts.length) await chrome.offscreen.closeDocument();
+    } catch {
+      /* Already gone, or one is being created for the next capture. Either way
+       * there is nothing here worth reporting. */
+    }
+  }, OFFSCREEN_IDLE_MS);
+}
+
 async function askOffscreen(op, payload) {
   let lastErr;
   /* Two passes, not more. The handshake in ensureOffscreen already absorbs a
@@ -442,7 +498,10 @@ async function askOffscreen(op, payload) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await ensureOffscreen();
     try {
-      return await chrome.runtime.sendMessage({ target: OFFSCREEN_TARGET, op, ...payload });
+      const res = await chrome.runtime.sendMessage({ target: OFFSCREEN_TARGET, op, ...payload });
+      if (op === 'make-blob-url' && res?.ok) outstandingBlobs += 1;
+      scheduleOffscreenClose();
+      return res;
     } catch (err) {
       lastErr = err;
       if (!isDisconnected(err)) throw err;
@@ -470,11 +529,13 @@ function timestampedName() {
  * As dialog can stay open indefinitely, and revoking underneath it would fail
  * the download. */
 function revokeBlobUrl(url) {
+  outstandingBlobs = Math.max(0, outstandingBlobs - 1);
   chrome.runtime
     .sendMessage({ target: OFFSCREEN_TARGET, op: 'revoke-blob-url', url })
     .catch(() => {
       /* Offscreen document already gone; the URL died with it. */
-    });
+    })
+    .finally(scheduleOffscreenClose);
 }
 
 const pendingDownloads = new Map(); // downloadId -> blob url

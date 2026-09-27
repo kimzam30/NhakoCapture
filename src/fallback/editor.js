@@ -20,6 +20,7 @@
   const annotateModule = NC.require('annotate');
   const railModule = NC.require('rail');
   const toolbarModule = NC.require('toolbar');
+  const clipboard = NC.require('clipboard');
 
   const STYLES = ['src/overlay/tokens.css', 'src/overlay/overlay.css'];
 
@@ -64,6 +65,36 @@
     runAll() { while (this.tasks.length) { try { this.tasks.pop()(); } catch { /* keep going */ } } },
   };
 
+  /* The decoded capture, held for the life of the window.
+   *
+   * This is what makes a resize survivable. The capture is consumed from
+   * storage the moment it arrives -- deliberately, so reopening this window
+   * cannot resurrect a screenshot the user dismissed -- which means there is
+   * nothing left to re-read afterwards. Reloading the window to re-fit, which
+   * is what a resize used to do, therefore threw the capture away and left the
+   * user looking at the empty state after nothing worse than dragging a
+   * corner. Everything the fit depends on is a pure function of this bitmap
+   * and the window size, so a remount is all a resize ever needed. */
+  let capture = null;          // { bitmap, cssText, capped }
+
+  /* Created once and kept across remounts, so marks survive a resize too.
+   * Fixing the capture loss while still silently discarding annotations would
+   * only be a smaller version of the same bug. */
+  let ops = null;
+
+  /* The fit currently in force. A remount compares against it to learn how far
+   * the capture scaled, which is what the ops and the frame are rescaled by. */
+  let currentBox = null;
+
+  /* One level of indirection so ops can outlive the modules that listen to it:
+   * opsModule.create takes its onChange once, but annotate and rail are rebuilt
+   * on every remount. */
+  const handlers = { change: () => {} };
+
+  function showEmpty() {
+    document.getElementById('empty').style.display = 'flex';
+  }
+
   async function main() {
     const KEYS = ['capturedImage', 'captureBlobUrl', 'captureCapped'];
     const stored = await chrome.storage.local.get(KEYS);
@@ -77,7 +108,7 @@
      * identical -- an <img> does not care which kind of URL it was given. */
     const source = stored.capturedImage ?? stored.captureBlobUrl;
     if (!source) {
-      document.getElementById('empty').style.display = 'flex';
+      showEmpty();
       return;
     }
 
@@ -101,13 +132,33 @@
         .catch(() => { /* worker asleep; the URL dies with the document */ });
     }
 
+    capture = { bitmap, cssText, capped: stored.captureCapped === true };
+    ops = opsModule.create({ onChange: () => handlers.change() });
+    mount();
+  }
+
+  /* Builds the whole editor against the current window size. Safe to run again:
+   * `cleanup.runAll()` takes the previous mount down first, and stage.mount
+   * removes any host that somehow survived it.
+   *
+   * `carry` is the state that outlives a remount -- the frame, and the scale
+   * factor everything recorded in the old fit has to be multiplied by. */
+  function mount(carry = null) {
+    const { bitmap, cssText, capped } = capture;
+
     const box = fit(bitmap);
+    const scale = carry && currentBox ? box.width / currentBox.width : 1;
+    currentBox = box;
+
+    /* Nothing may reach the modules from the mount being replaced -- their DOM
+     * is already gone. Re-pointed at the new ones at the end of this function. */
+    handlers.change = () => {};
+    if (carry) ops.remap((op) => opsModule.scaleOp(op, scale));
+
     const metrics = geometry.measure(
       bitmap.naturalWidth, bitmap.naturalHeight, box.width, box.height);
 
     const stage = stageModule.mount({ bitmap, metrics, cssText, box, clip: false }, cleanup);
-
-    const ops = opsModule.create({ onChange: () => { annotate.paint(); rail.sync(); } });
 
     const selection = selectionModule.create({
       layer: stage.layer,
@@ -170,9 +221,23 @@
       },
     });
 
+    handlers.change = () => { annotate.paint(); rail.sync(); };
+
     rail.init();
-    // The whole capture, framed, so the window is immediately useful.
-    selection.selectAll();
+    /* Restore the frame the user had, scaled into the new fit; on a first
+     * mount there is none, so frame the whole capture and make the window
+     * immediately useful. */
+    if (!carry) {
+      selection.selectAll();
+    } else if (carry.rect) {
+      const r = carry.rect;
+      selection.set({
+        x: r.x * scale, y: r.y * scale, w: r.w * scale, h: r.h * scale,
+      });
+    }
+    /* A remount with no frame keeps having no frame -- selection starts empty,
+     * so re-framing everything would undo a deliberate Escape. */
+    if (carry?.tool) annotate.setTool(carry.tool);
 
     /* A capped capture is not the page. Say so, in the pill, before the user
      * has done anything with it -- and keep saying it, because `selectAll`
@@ -186,7 +251,7 @@
      *
      * Deferred a frame so the live region is in the tree before its text
      * changes, which is what makes it announce. */
-    if (stored.captureCapped === true) {
+    if (capped) {
       requestAnimationFrame(() => {
         toolbar.setNotice(
           `Full page capped at ${bitmap.naturalHeight}px — page is longer`
@@ -196,7 +261,9 @@
 
     cleanup.listen(stage.root, 'pointerdown', (e) => {
       if (e.button !== 0) return;
-      if (annotate.tool && selection.rect && annotate.onPointerDown(e)) {
+      // Handles always resize, tool or no tool -- as in the page overlay.
+      const onHandle = e.composedPath()[0]?.classList?.contains('nc-handle');
+      if (!onHandle && annotate.tool && selection.rect && annotate.onPointerDown(e)) {
         e.preventDefault();
         stage.root.setPointerCapture(e.pointerId);
         return;
@@ -239,20 +306,35 @@
       if (selection.onKeyDown(event)) stop();
     }, true);
 
+    let finishing = false;
+
     async function finish(action) {
+      if (finishing) return;
       const canvas = annotate.compose();
-      if (!canvas) return;
+      if (!canvas) {
+        toolbar.setHint('Drag to select an area first');
+        return;
+      }
+      finishing = true;
       toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…');
 
       let res;
       try {
-        res = await chrome.runtime.sendMessage({
-          type: `nc:${action}`,
-          dataUrl: canvas.toDataURL('image/png'),
-        });
+        /* This window is an extension page: a secure context, and focused
+         * because the user just clicked in it -- so it can write a real PNG
+         * itself, which the offscreen document never can. */
+        if (action === 'copy' && await clipboard.writePng(canvas)) {
+          res = { ok: true, via: 'page' };
+        } else {
+          res = await chrome.runtime.sendMessage({
+            type: `nc:${action}`,
+            dataUrl: canvas.toDataURL('image/png'),
+          });
+        }
       } catch (err) {
         res = { ok: false, error: String(err) };
       }
+      finishing = false;
 
       if (res?.ok) {
         /* Same reasoning as the overlay: the degraded result goes to the
@@ -270,11 +352,30 @@
     }
 
     /* Resizing the window changes the fit, and every coordinate is measured
-     * against it. Remount rather than let the frame drift off the image. */
+     * against it, so the editor has to be rebuilt.
+     *
+     * Rebuilt -- NOT reloaded. This reloaded the window, which is the one thing
+     * it could not do: the capture is consumed from storage on open and the
+     * blob URL is revoked immediately after decoding, so the reloaded document
+     * found nothing and showed the empty state. Dragging the corner of the
+     * window destroyed the screenshot. The bitmap is still in memory here, and
+     * the frame and the marks come with it. */
     let resizeTimer = null;
+    cleanup.add(() => clearTimeout(resizeTimer));
     cleanup.listen(window, 'resize', () => {
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => window.location.reload(), 200);
+      resizeTimer = setTimeout(() => {
+        const carry = { rect: selection.rect, tool: annotate.tool };
+        cleanup.runAll();
+        try {
+          mount(carry);
+        } catch (err) {
+          /* Nothing is left listening at this point, so a throw here would
+           * leave a blank window with no way out. */
+          console.error('[NhakoCapture] remount after resize failed:', err);
+          showEmpty();
+        }
+      }, 200);
     });
 
     stage.root.focus({ preventScroll: true });
@@ -282,6 +383,6 @@
 
   main().catch((err) => {
     console.error('[NhakoCapture] fallback editor failed:', err);
-    document.getElementById('empty').style.display = 'flex';
+    showEmpty();
   });
 })();

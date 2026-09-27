@@ -27,15 +27,7 @@
   const toolbarModule = NC.require('toolbar');
   const fullpageModule = NC.require('fullpage');
   const stitchModule = NC.require('stitch');
-
-  if (NC.reinjected) {
-    NC.reinjected = false;
-    try {
-      NC.destroy?.();
-    } catch (err) {
-      console.warn('[NhakoCapture] teardown before relaunch failed:', err);
-    }
-  }
+  const clipboard = NC.require('clipboard');
 
   /* A live region that is NOT inside the overlay.
    *
@@ -145,14 +137,23 @@
 
     const cleanup = createCleanup();
     session = { bitmap, metrics, cleanup };
+    NC.destroy = destroy;
 
     /* Scroll lock. The backdrop is a still image, so a scroll underneath it
      * would silently desync the overlay from the page it depicts. */
     const scroll = { x: window.scrollX, y: window.scrollY };
-    const prevOverflow = document.documentElement.style.overflow;
-    document.documentElement.style.overflow = 'hidden';
+    /* !important, and restored with its original priority. A page that sets
+     * `html { overflow: scroll !important }` would otherwise keep its
+     * scrollbar, which narrows the host by the scrollbar's width and squeezes
+     * the backdrop out of register with every coordinate measured against
+     * innerWidth. */
+    const rootStyle = document.documentElement.style;
+    const prevOverflow = rootStyle.getPropertyValue('overflow');
+    const prevPriority = rootStyle.getPropertyPriority('overflow');
+    rootStyle.setProperty('overflow', 'hidden', 'important');
     cleanup.add(() => {
-      document.documentElement.style.overflow = prevOverflow;
+      if (prevOverflow) rootStyle.setProperty('overflow', prevOverflow, prevPriority);
+      else rootStyle.removeProperty('overflow');
       window.scrollTo(scroll.x, scroll.y);
     });
 
@@ -160,7 +161,7 @@
      * user back exactly where they were. */
     const previouslyFocused = document.activeElement;
     cleanup.add(() => {
-      try { previouslyFocused?.focus?.(); } catch { /* element is gone */ }
+      try { previouslyFocused?.focus?.({ preventScroll: true }); } catch { /* element is gone */ }
     });
 
     const announcer = createAnnouncer(cleanup);
@@ -243,7 +244,11 @@
      * Selection only sees the event when no tool has claimed it. */
     cleanup.listen(stage.root, 'pointerdown', (e) => {
       if (e.button !== 0) return;
-      if (annotate.tool && selection.rect && annotate.onPointerDown(e)) {
+      /* Handles always resize, tool or no tool. Marks are anchored in
+       * viewport coordinates, so reframing never moves them -- there was no
+       * reason to make the user drop the tool just to adjust an edge. */
+      const onHandle = e.composedPath()[0]?.classList?.contains('nc-handle');
+      if (!onHandle && annotate.tool && selection.rect && annotate.onPointerDown(e)) {
         e.preventDefault();
         stage.root.setPointerCapture(e.pointerId);
         return;
@@ -272,6 +277,10 @@
     cleanup.listen(document, 'keydown', (event) => {
       // The text tool owns the keyboard while it is open.
       if (annotate.editing) return;
+      /* Mid-capture the overlay is hidden and only Escape means anything. A
+       * stray P or Ctrl+Z would otherwise change tools or history on a UI the
+       * user cannot see. */
+      if (session?.capturing && event.key !== 'Escape') return;
 
       const mod = event.ctrlKey || event.metaKey;
       const stop = () => { event.preventDefault(); event.stopPropagation(); };
@@ -303,7 +312,12 @@
       // Single-key tool shortcuts, but only once there is a frame to draw on.
       if (selection.rect && !event.altKey && rail.handleKey(event.key)) { stop(); return; }
 
-      if (selection.onKeyDown(event)) stop();
+      if (selection.onKeyDown(event)) { stop(); return; }
+
+      /* The overflow lock pins the document, but not an inner scroller that
+       * has focus: Space or PageDown would still slide content out from
+       * under the frozen backdrop. */
+      if (event.target !== stage.host && SCROLL_KEYS.has(event.key)) stop();
     }, true);
 
     /* The scroll lock stops the document scrolling, but a wheel over a nested
@@ -337,18 +351,33 @@
     /* Compose once, then hand the same bytes to whichever action was asked
      * for. Failure leaves the overlay up so the capture is not lost. */
     async function finish(action) {
+      /* One at a time. A second Ctrl+C while the first is in flight would
+       * queue a second copy and a second teardown timer. */
+      if (session?.finishing) return;
       const canvas = annotate.compose();
-      if (!canvas) return;
-
-      const dataUrl = canvas.toDataURL('image/png');
+      if (!canvas) {
+        toolbar.setHint('Drag to select an area first');
+        return;
+      }
+      session.finishing = true;
       toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…');
 
       let res;
       try {
-        res = await chrome.runtime.sendMessage({ type: `nc:${action}`, dataUrl });
+        /* Straight from this document when it can: it is focused and holds
+         * the user's activation, which the offscreen document never does. */
+        if (action === 'copy' && await clipboard.writePng(canvas)) {
+          res = { ok: true, via: 'page' };
+        } else {
+          res = await chrome.runtime.sendMessage({
+            type: `nc:${action}`, dataUrl: canvas.toDataURL('image/png'),
+          });
+        }
       } catch (err) {
         res = { ok: false, error: String(err) };
       }
+      if (!session) return;
+      session.finishing = false;
 
       if (res?.ok) {
         if (res.degraded) {
@@ -461,7 +490,13 @@
          * to survive the trip, and a page-origin blob is opaque to the editor
          * window anyway. The service worker turns it into a blob URL on the
          * far side, where the editor can actually read it. */
-        const dataUrl = canvas.toDataURL('image/png');
+        /* Extension messages are capped at 64MB of JSON. A tall, photo-heavy
+         * page at 2x can push a PNG past that, and the handoff then fails
+         * after the user has waited through the whole capture. JPEG at high
+         * quality is a fraction of the size and still far sharper than any
+         * downscale would have been. */
+        let dataUrl = canvas.toDataURL('image/png');
+        if (dataUrl.length > MAX_HANDOFF_CHARS) dataUrl = canvas.toDataURL('image/jpeg', 0.92);
         const handoff = await chrome.runtime.sendMessage({
           type: 'nc:full-page-done',
           dataUrl,
@@ -539,6 +574,17 @@
     return { metrics };
   }
 
+  /* Comfortably under Chromium's 64MB message cap, leaving room for the JSON
+   * envelope and the second hop from the service worker to the offscreen
+   * document. */
+  const MAX_HANDOFF_CHARS = 48 * 1024 * 1024;
+
+  /* Keys that scroll a focused element. Swallowed while the overlay is up. */
+  const SCROLL_KEYS = new Set([
+    ' ', 'PageUp', 'PageDown', 'Home', 'End',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  ]);
+
   function destroy() {
     if (!session) return;
 
@@ -559,7 +605,6 @@
 
     session.cleanup.runAll();
     session = null;
-    NC.destroy = null;
   }
 
   NC.define('overlay', {
@@ -569,21 +614,31 @@
     get session() { return session; },
   });
 
-  /* Registered once for the lifetime of the isolated world, outside start(), so
-   * repeated invocations cannot stack handlers. */
-  if (!NC.modules.__listening) {
-    NC.define('__listening', true);
-    chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-      if (msg?.type !== 'nc:start') return false;
-      start(msg).then(
-        (result) => sendResponse({ ok: true, ...result }),
-        (err) => {
-          console.error('[NhakoCapture] start failed:', err);
-          destroy();
-          sendResponse({ ok: false, error: String(err) });
-        }
-      );
-      return true;
-    });
+  /* One listener per injection. namespace.js calls `detach` on the previous
+   * build before this file runs again, so repeated invocations cannot stack
+   * handlers -- and a build orphaned by an extension reload is replaced
+   * rather than left holding the only listener, deaf. */
+  function onMessage(msg, _sender, sendResponse) {
+    /* Pressing the shortcut again while the overlay is up closes it, the way
+     * Opera's does. The service worker asks before capturing, because
+     * capturing first would photograph this overlay. */
+    if (msg?.type === 'nc:dismiss') {
+      const active = session !== null;
+      destroy();
+      sendResponse({ ok: true, dismissed: active });
+      return false;
+    }
+    if (msg?.type !== 'nc:start') return false;
+    start(msg).then(
+      (result) => sendResponse({ ok: true, ...result }),
+      (err) => {
+        console.error('[NhakoCapture] start failed:', err);
+        destroy();
+        sendResponse({ ok: false, error: String(err) });
+      }
+    );
+    return true;
   }
+  chrome.runtime.onMessage.addListener(onMessage);
+  NC.detach = () => chrome.runtime.onMessage.removeListener?.(onMessage);
 })();
