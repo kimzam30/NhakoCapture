@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NhakoCapture Launch</title>
+<!--
+  NhakoCapture launch poster. Same stage as the NhakoSearch and Nhako Tools
+  posters: pale Apple-white ground, one big San Francisco headline with a
+  pink-to-lavender second line, the real product in the middle, a dark pill to
+  finish. The browser window shows docs/screenshot.png, which the extension's
+  own code renders (node tools/preview.mjs out/ --hero) -- not a mockup.
+
+  Render:  node tools/render-poster.mjs   ->  docs/launch/poster.png
+-->
+<style>
+  :root {
+    --ink: #1d1d1f;
+    --muted: #6e6e73;
+    --bg: #fbfbfd;
+    --plum: #4a1942;
+    --pink: #ff5fb8;
+    --lav: #8b6cf0;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 1640px; background: var(--bg); }
+  body {
+    font-family: "SF Pro Display", "Inter", -apple-system, system-ui, sans-serif;
+    color: var(--ink);
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Soft stage light behind the window. */
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(560px 380px at 30% 60%, rgba(255, 120, 190, .20), transparent 70%),
+      radial-gradient(600px 420px at 72% 58%, rgba(139, 108, 240, .18), transparent 70%),
+      radial-gradient(900px 460px at 50% 104%, rgba(255, 214, 236, .70), transparent 70%);
+  }
+
+  header { position: absolute; top: 86px; left: 0; right: 0; text-align: center; }
+  .brand {
+    display: inline-flex; align-items: center; gap: 14px;
+    font-size: 24px; font-weight: 600; letter-spacing: -.01em;
+  }
+  .brand img { width: 46px; height: 46px; filter: drop-shadow(0 2px 6px rgba(74, 25, 66, .18)); }
+  h1 {
+    margin-top: 30px;
+    font-size: 100px; line-height: 1.02; font-weight: 700; letter-spacing: -.045em;
+  }
+  h1 .grad {
+    background: linear-gradient(95deg, #ff5fa2 0%, #d45fd8 50%, #8b6cf0 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+    padding-bottom: 6px;
+  }
+  .sub {
+    margin: 28px auto 0; max-width: 760px;
+    font-size: 27px; line-height: 1.34; font-weight: 400; letter-spacing: -.012em; color: var(--muted);
+  }
+
+  /* The shortcut, as keycaps. */
+  .keys { margin-top: 30px; display: inline-flex; align-items: center; gap: 12px; color: var(--muted); font-size: 19px; }
+  .cap {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 48px; height: 48px; padding: 0 12px;
+    border-radius: 11px; background: linear-gradient(#fff, #f3f3f6);
+    box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 2px 0 rgba(0,0,0,.08), 0 6px 14px -6px rgba(0,0,0,.18);
+    font-size: 22px; font-weight: 500; color: var(--ink);
+  }
+  .keys .or { margin: 0 6px; }
+
+  /* ---------- the browser window ---------- */
+  .window {
+    position: absolute; left: 90px; top: 648px; width: 1020px;
+    border-radius: 16px; overflow: hidden; background: #fff;
+    box-shadow:
+      0 0 0 1px rgba(0, 0, 0, .08),
+      0 30px 60px -20px rgba(74, 25, 66, .35),
+      0 60px 120px -40px rgba(139, 108, 240, .35);
+  }
+  .chrome {
+    height: 46px; display: flex; align-items: center; gap: 16px; padding: 0 18px;
+    background: linear-gradient(#f6f5f8, #eeedf2); border-bottom: 1px solid rgba(0,0,0,.07);
+  }
+  .lights { display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #ff5f57; }
+  .lights i:nth-child(2) { background: #febc2e; }
+  .lights i:nth-child(3) { background: #28c840; }
+  .url {
+    flex: 1; height: 28px; margin: 0 80px; border-radius: 8px; background: rgba(0,0,0,.05);
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    font-size: 14px; color: #6e6e73; letter-spacing: 0;
+  }
+  .url svg { width: 12px; height: 12px; }
+  .ext { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 2px #ff91e7; }
+  .window img.shot { display: block; width: 100%; }
+
+  /* ---------- facts ---------- */
+  .facts {
+    position: absolute; left: 90px; right: 90px; top: 1282px;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center;
+  }
+  .fact b {
+    display: block; font-size: 44px; font-weight: 700; letter-spacing: -.035em; line-height: 1;
+    background: linear-gradient(95deg, #ff5fa2, #8b6cf0);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .fact span { display: block; margin-top: 10px; font-size: 18px; line-height: 1.35; color: var(--muted); }
+
+  footer { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; }
+  .cta {
+    display: inline-flex; align-items: center; gap: 12px;
+    height: 72px; padding: 0 38px; border-radius: 36px;
+    background: #1d1d1f; color: #fff; font-size: 27px; font-weight: 500; letter-spacing: -.01em;
+    box-shadow: 0 12px 30px -10px rgba(29, 29, 31, .45);
+  }
+  .small { margin-top: 20px; font-size: 19px; color: var(--muted); }
+
+  /* ---------- butterflies, stuck on by hand ---------- */
+  .fly { position: absolute; width: 60px; height: 60px; }
+  .fly svg { width: 100%; height: 100%; display: block; overflow: visible; }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="wt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa9d6"/><stop offset="1" stop-color="#f46fb4"/></linearGradient>
+      <linearGradient id="wl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cdb6fa"/><stop offset="1" stop-color="#a184ee"/></linearGradient>
+      <g id="half" stroke="#4a1942" stroke-width="22" stroke-linejoin="round">
+        <path d="M530 522C556 432 630 350 694 356C756 362 760 444 712 494C674 534 602 544 532 540Z" fill="url(#wt)"/>
+        <path d="M530 552C598 552 656 580 660 628C664 676 616 700 580 680C546 660 530 612 530 552Z" fill="url(#wl)"/>
+        <circle cx="668" cy="420" r="21" fill="#fff" stroke="none"/>
+        <circle cx="616" cy="638" r="14" fill="#fff" stroke="none"/>
+        <path d="M518 446C522 408 534 382 556 366" fill="none" stroke-linecap="round" stroke-width="16"/>
+        <circle cx="560" cy="362" r="13" fill="#4a1942" stroke="none"/>
+      </g>
+      <symbol id="bfly" viewBox="250 330 524 380">
+        <use href="#half"/>
+        <use href="#half" transform="translate(1024 0) scale(-1 1)"/>
+        <rect x="494" y="438" width="36" height="236" rx="18" fill="#4a1942"/>
+      </symbol>
+    </defs>
+  </svg>
+
+  <div class="glow"></div>
+
+  <div class="fly" style="left:120px; top:520px; transform: rotate(-18deg) scale(.9)"><svg><use href="#bfly"/></svg></div>
+  <div class="fly" style="left:1020px; top:470px; transform: rotate(14deg) scale(1.15)"><svg><use href="#bfly"/></svg></div>
+  <div class="fly" style="left:1122px; top:1070px; transform: rotate(-10deg) scale(.6); opacity:.85"><svg><use href="#bfly"/></svg></div>
+  <div class="fly" style="left:20px; top:880px; transform: rotate(22deg) scale(.6); opacity:.8"><svg><use href="#bfly"/></svg></div>
+  <div class="fly" style="left:170px; top:1500px; transform: rotate(-6deg) scale(.55); opacity:.6; filter: blur(1.5px)"><svg><use href="#bfly"/></svg></div>
+
+  <header>
+    <div class="brand"><img src="../brand/logo.svg" alt="">NhakoCapture</div>
+    <h1>Screenshot anything.<br><span class="grad">Never leave the tab.</span></h1>
+    <p class="sub">The page freezes, you drag a box, scribble on it, and it&rsquo;s on your clipboard. Nothing ever leaves your computer.</p>
+    <div class="keys">
+      <span class="cap">⌘</span><span class="cap">⇧</span><span class="cap">2</span>
+      <span class="or">or</span>
+      <span class="cap">Ctrl</span><span class="cap">⇧</span><span class="cap">5</span>
+    </div>
+  </header>
+
+  <div class="window">
+    <div class="chrome">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <div class="url">
+        <svg viewBox="0 0 12 12"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5M2.5 5.5h7v5h-7z" fill="none" stroke="#8e8e93" stroke-width="1.2"/></svg>
+        meridian.example
+      </div>
+      <img class="ext" src="../brand/logo.svg" alt="">
+    </div>
+    <img class="shot" src="../screenshot.png" alt="">
+  </div>
+
+  <section class="facts">
+    <div class="fact"><b>1 shortcut</b><span>and the page holds still for you</span></div>
+    <div class="fact"><b>5 tools</b><span>pen, arrow, blur, highlighter, text</span></div>
+    <div class="fact"><b>Whole page</b><span>scrolled and stitched for you</span></div>
+    <div class="fact"><b>0 uploads</b><span>no account, no tracking, ever</span></div>
+  </section>
+
+  <footer>
+    <div class="cta">Free for Chrome, Brave and Edge</div>
+    <p class="small">No sign-up. No build step. Load it and press the shortcut.</p>
+  </footer>
+</body>
+</html>

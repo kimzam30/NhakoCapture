@@ -1,254 +1,300 @@
 <div align="center">
 
-<img src="icons/icon128.png" width="96" height="96" alt="NhakoCapture">
+<img src="docs/brand/logo-512.png" width="128" height="128" alt="NhakoCapture logo: a pink and lavender butterfly caught inside a capture frame">
 
 # NhakoCapture
 
-**Snapshot tool, rebuilt for browser of your choice.**
+**Screenshot anything. Never leave the tab.**
 
-Freeze the page, frame a region, mark it up, copy. Without ever leaving the tab.
+Press one shortcut. The page holds still, you drag a box around what matters,
+scribble on it, and it's on your clipboard, ready to paste.
 
 <p>
-  <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-8a2be2">
-  <img alt="Vanilla JS" src="https://img.shields.io/badge/JavaScript-vanilla-8a2be2">
-  <img alt="Dependencies" src="https://img.shields.io/badge/dependencies-0-brightgreen">
-  <img alt="Build step" src="https://img.shields.io/badge/build%20step-none-brightgreen">
-  <img alt="Telemetry" src="https://img.shields.io/badge/telemetry-none-brightgreen">
+  <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-ff91e7">
+  <img alt="Plain JavaScript" src="https://img.shields.io/badge/JavaScript-plain-c3a6f0">
+  <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-0-ff91e7">
+  <img alt="Build step: none" src="https://img.shields.io/badge/build%20step-none-c3a6f0">
+  <img alt="Tracking: none" src="https://img.shields.io/badge/tracking-none-ff91e7">
 </p>
 
 </div>
 
 <div align="center">
-  <img src="docs/screenshot.png" alt="NhakoCapture in use: a framed region with highlight, arrow, blur and text annotations, the command pill above and the tool rail below" width="100%">
-  <sub><i>Not a mockup — rendered by the extension's own code and captured automatically. See <a href="#development">Development</a>.</i></sub>
+  <img src="docs/screenshot.png" alt="NhakoCapture over a web page: a framed area with a highlight, an arrow, a blurred line and a text label, the command bar on top and the tool bar underneath" width="100%">
+  <sub><i>Not a mockup. The extension's own code drew this, and a script captured it. See <a href="#for-developers">For developers</a>.</i></sub>
 </div>
 
 ---
 
-## Why this exists
+## Why it exists
 
-Opera has a screenshot tool that is one keystroke and then out of your way:
-`Ctrl+Shift+5`, the page freezes, you drag a box, scribble a red arrow on the
-thing you are pointing at, and paste it into a chat. You never leave the tab and
-you never think about it.
+Opera has a screenshot tool that gets out of your way. One shortcut, the page
+freezes, you drag a box, put a red arrow on the thing you mean, and paste it into
+a chat. You never leave the tab and you never think about it.
 
-Brave has nothing equivalent, and the extensions that claim to fill the gap break
-the part that mattered, they throw you into a new tab, or make you save a file
-and reopen it somewhere else to annotate, or want an account. The friction is not
-that screenshots are hard. It is that a two-second reflex becomes a twelve-second
-errand, and it interrupts the thought that prompted the screenshot.
+Most other browsers don't have that. The extensions that try tend to lose the
+part that mattered: they open a new tab, or make you save a file and open it
+somewhere else to draw on it, or want you to sign up first. Screenshots aren't
+hard. The problem is that a two-second habit turns into a twelve-second chore,
+and it breaks the thought you were having.
 
-NhakoCapture rebuilds that reflex.
+NhakoCapture brings the two-second version back. It's part of the Nhako family,
+alongside [Nhako Tools](https://tools.nhako.com) and
+[NhakoSearch](https://search.nhako.com): free, private, and made to feel good to use.
 
-## Features
+## What it does
 
 | | |
 |---|---|
-| **Frozen page** | The viewport is captured *before* any UI appears, so the page stops dead and the extension's own chrome can never end up in your screenshot. |
-| **Live framing** | Drag to select. Eight resize handles, draggable interior, arrow-key nudge. A live `W × H` badge showing the real output size, not the CSS size. |
-| **Annotate in place** | Pencil, arrow, blur, highlight and text — over the page you are already looking at. Seven inks, three stroke weights. |
-| **Real redaction** | Blur replaces pixels with a blurred copy of themselves. The original values are not recoverable from the exported file. |
-| **Full undo** | Every mark is a record, not paint. `Ctrl+Z` / `Ctrl+Shift+Z` all the way back. |
-| **Copy or save** | Straight to the clipboard as a real PNG, or a real Save-As dialog that lets you pick where it goes. |
-| **Whole page as PNG** | Scroll-and-stitch, with sticky headers neutralised and lazy images woken first. |
-| **Whole page as PDF** | The entire document, not just the viewport. |
-| **Private by construction** | No network calls, no accounts, no telemetry, no analytics. Nothing leaves the machine. |
+| **The page holds still** | The screen is captured *before* anything of ours appears, so the page stops exactly as it was, and our buttons can never end up in your screenshot. |
+| **Drag to frame** | Draw a box, then fine-tune it with eight round handles, by dragging the middle, or with the arrow keys. A small label shows the real size of the image you'll get. |
+| **Mark it up right there** | Pen, arrow, blur, highlighter and text, on top of the page you're already looking at. Seven colours, three line widths, and a magnifier for the fiddly bits. |
+| **Blur that really hides things** | Blur replaces the pixels with a blurred copy of themselves. Nobody can un-blur the file you share. |
+| **Undo everything** | Every mark can be taken back, one at a time, all the way to the start. |
+| **Copy or save** | Straight to your clipboard as a real image, or to a proper Save dialog where you choose the folder. |
+| **The whole page, too** | It scrolls the page for you and stitches it into one tall image. Sticky headers show up once, not on every screenful. |
+| **Or a PDF** | The entire page as a PDF, not just the part on screen. |
+| **Private by design** | No internet connection, no account, no analytics. Nothing leaves your computer. |
 
 ## Install
 
-Not on the Web Store. Load it unpacked:
+It isn't on the Web Store yet, so you load it yourself. It takes a minute:
 
-1. Clone this repository.
-2. Open your browser's extensions page — `brave://extensions`,
-   `chrome://extensions` or `edge://extensions`.
-3. Turn on **Developer mode**, top right.
-4. Click **Load unpacked** and select the **repository root** — the folder
-   containing `manifest.json`.
-5. Pin it from the puzzle-piece menu so the shortcut has somewhere to land.
+1. Download or clone this repository.
+2. Open your browser's extensions page: `chrome://extensions`, `brave://extensions`
+   or `edge://extensions`.
+3. Turn on **Developer mode** (top right).
+4. Click **Load unpacked** and pick the folder that contains `manifest.json`.
+5. Pin NhakoCapture from the puzzle-piece menu so it's always one click away.
 
-Chromium assigns `Ctrl+Shift+5` automatically. Check or change it at
-`brave://extensions/shortcuts`.
+Needs Chrome, Brave or Edge **116 or newer**.
 
-## Using it
+## How to use it
 
-Press `Ctrl+Shift+5`, or click the toolbar icon.
+Press the shortcut, or click the butterfly in your toolbar.
 
-The page freezes under a dim scrim. From there:
+| | Shortcut |
+|---|---|
+| Windows, Linux, ChromeOS | `Ctrl` `Shift` `5` |
+| Mac | `⌘` `⇧` `2` (macOS keeps `⌘⇧5` for its own screenshot tool) |
 
-- **Drag** anywhere to frame a region.
-- **Capture visible page** takes the viewport — what is on screen, nothing more.
-- **Capture full page** scrolls the document and stitches the whole thing into
-  one image, then opens it in the editor window.
-- **Save page as PDF** takes the entire document as a PDF instead.
+Your browser might pick a different shortcut if another extension already uses
+that one. Hover over the toolbar icon to see which one you have, and change it at
+`chrome://extensions/shortcuts`.
 
-Once you have a frame, the tool rail appears. Pick a tool, mark it up, then
-**Copy** or **Save**. The frame's handles keep working while a tool is chosen,
-and a stray click outside the frame leaves the frame — and your marks — alone.
+The page dims and holds still. Then:
 
-Pressing `Ctrl+Shift+5` again while the overlay is up closes it.
+- **Drag** over anything to frame it.
+- **Visible area** frames everything on screen.
+- **Whole page** scrolls the page and captures all of it, then opens it in a new
+  window for you to mark up.
+- **Save as PDF** saves the entire page as a PDF.
 
-### About full page
+Once you've framed something, the tool bar slides up underneath. Pick a tool,
+draw, then hit **Copy** or **Save**. You'll see a quick flash and a tick, and
+the overlay gets out of your way. You can keep adjusting the frame's edges while
+a tool is selected. A stray click outside the frame won't throw your drawing away.
 
-It is a second gear, not the default, and it behaves like one:
-
-- It takes about **half a second per screenful**, because Chromium rate-limits
-  tab capture to roughly two calls a second. The extension icon counts the
-  tiles while it works — `3/9`, or a percentage past nine screenfuls.
-- The page is swept once first, to wake lazily-loaded images that have never
-  been scrolled into view.
-- Fixed headers, cookie bars and chat widgets appear **once**, at the top,
-  instead of banding down every screenful.
-- **Esc cancels.** Your scroll position and every element it touched go back
-  exactly as they were, on cancel, on failure, and on success alike.
-- Pages taller than 16384 device pixels are **capped** there rather than
-  downscaled, and the editor says so. A sharp screenshot of the first sixteen
-  thousand pixels is worth more than a soft one of everything.
-- On a page with nothing below the fold the button is disabled and says why —
-  a full-page capture would be the visible one, byte for byte.
+Press the shortcut again at any time to close it.
 
 ### Keyboard
 
-| Key | Does |
+| Key | What it does |
 |---|---|
-| `Ctrl+Shift+5` | Open NhakoCapture — press again to close it |
-| `P` `A` `B` `H` `T` `Z` | Pencil · Arrow · Blur · Highlight · Text · Zoom |
-| `Ctrl+Z` / `Ctrl+Shift+Z` | Undo / redo |
-| `Ctrl+C` | Copy and close |
-| `Ctrl+S` | Save and close |
-| `↑ ↓ ← →` | Nudge the frame 1px |
-| `Shift` + arrows | Nudge 10px |
+| `Ctrl` `Shift` `5` / `⌘` `⇧` `2` | Open NhakoCapture, or close it again |
+| `P` `A` `B` `H` `T` `Z` | Pen, Arrow, Blur, Highlighter, Text, Magnifier |
+| `Ctrl` `Z` / `Ctrl` `Shift` `Z` | Undo / redo (`⌘` on a Mac) |
+| `Ctrl` `C` | Copy and close |
+| `Ctrl` `S` | Save and close |
+| `←` `↑` `→` `↓` | Nudge the frame by 1 pixel |
+| `Shift` + arrows | Nudge by 10 pixels |
 | `Alt` + arrows | Resize the frame |
-| `Esc` | One step back — release the tool, clear the frame, then exit |
+| `Esc` | One step back: put the tool down, then clear the frame, then close |
 
-## Permissions
+### Whole-page captures, honestly
 
-Every permission, and why it is there. The last one deserves an explanation.
+They're the slower option, and here's why:
 
-| Permission | Why |
+- **It takes about half a second per screenful.** Browsers only allow about two
+  captures a second. The toolbar icon counts along while it works: `3/9`, or a
+  percentage on long pages.
+- **It scrolls through the page first**, so pictures that only load when you
+  scroll to them are there in the final image.
+- **Sticky headers, cookie banners and chat bubbles appear once**, at the top,
+  instead of repeating down the whole image.
+- **Switching tabs pauses it.** It carries on when you come back, so it never
+  captures the wrong tab by mistake.
+- **`Esc` stops it.** The page goes back exactly where it was, whether you stop
+  it, it fails, or it finishes.
+- **Very long pages are cut off at 16,384 pixels** instead of being shrunk into a
+  blurry mess, and the editor tells you when that's happened.
+- **If the whole page already fits on screen**, the button says so rather than
+  giving you the same picture twice.
+
+## Permissions, and why each one is there
+
+| Permission | Why it's needed |
 |---|---|
-| `activeTab` | Read the current tab so it can be captured. Granted only when *you* invoke the extension, and only for that tab. |
-| `scripting` | Inject the overlay into the page you are capturing. |
-| `storage` | Used by the restricted-page fallback editor. |
-| `downloads` | Open a real Save-As dialog rather than dropping files silently into your downloads folder. |
-| `offscreen` | Clipboard fallback and blob URLs. Copies are written from the page itself when it is a secure context (every `https://` page); on a plain `http://` page `navigator.clipboard` does not exist, so the copy goes through an offscreen document instead — which can only place it on the clipboard as HTML. |
-| `debugger` | **Only** for `Save page as PDF`. Chromium exposes `Page.printToPDF` through the DevTools protocol and nowhere else. It is attached for the second the render takes and detached immediately in a `finally` block, and Chromium shows its "started debugging this browser" banner for that moment. If attaching fails, it falls back to the normal print dialog. It is never used for anything else. |
+| `activeTab` | To capture the tab you're on. Only granted when *you* press the shortcut or click the icon, and only for that tab. |
+| `scripting` | To put the overlay on the page you're capturing. |
+| `storage` | To hand a capture to the editing window on pages where the overlay can't run. |
+| `downloads` | To open a real Save dialog, so you pick where the file goes. |
+| `offscreen` | To copy images on plain `http://` pages, where the page itself isn't allowed to use the clipboard. On those pages the copy pastes into chats and documents, but not into image editors, and NhakoCapture tells you so. |
+| `debugger` | **Only** for *Save as PDF*. It's the only way a browser lets an extension make a PDF of a page. It's switched on for the second the PDF takes and switched off straight after, and your browser shows a "started debugging" banner during that time. If it can't be used, you get the normal print dialog instead. It's never used for anything else. |
 
-## How it works
+## What's new in 2.1
 
-No bundler, no framework, no dependencies — the source you read is the code that
-runs.
+- **A new look.** A frosted, dusk-tinted toolbar in the Nhako pink and lavender,
+  round handles, and small spring animations when things appear. A shutter flash
+  and a tick tell you the copy worked. Everything still respects your system's
+  *reduce motion* and high-contrast settings.
+- **A new icon.** A butterfly caught in a capture frame, drawn to stay sharp even
+  at 16 pixels.
+- **Plainer words.** "Visible area", "Whole page", "Pen", "Highlighter",
+  "Magnifier". Messages say what happened ("Couldn't copy that. Try again?")
+  instead of "Copy failed".
+- **Fixed: switching tabs during a whole-page capture** could stitch the other
+  tab into your image. It now pauses until you come back.
+- **Fixed: some websites' own styles could shrink or move the overlay**, leaving
+  it out of line with the page. The overlay now holds its position whatever the
+  site does.
+- **Fixed: after *Visible area*, the top bar couldn't be clicked.** It now just
+  fades back and comes forward when you point at it.
+- **Fixed: the tooltip always said `Ctrl+Shift+5`**, even on a Mac where the
+  shortcut is `⌘⇧2`. It now shows the shortcut you actually have.
+- **Fixed: cancelling the Save dialog** could show an error on some browser
+  versions. Changing your mind isn't an error.
+- **Faster long pen strokes.** Drawing a long line no longer slows down as it
+  grows.
+- Screenshots are now named like macOS names them:
+  `NhakoCapture 2026-09-29 at 14.03.22.png`.
+
+## How it's built
+
+No bundler, no framework, no dependencies. The code you read is the code that runs.
 
 ```
 manifest.json          Manifest V3
-icons/                 generated by tools/make-icons.py
+icons/                 made from docs/brand by tools/make-icons.py
+docs/brand/            the logo (SVG masters and a PNG)
+docs/launch/           the launch poster, as HTML and PNG
 src/
-├── background.js      captures FIRST, then injects; routes messages
-├── offscreen.js       clipboard writes and blob URLs
+├── background.js      captures FIRST, then adds the overlay; routes messages
+├── offscreen.js       clipboard fallback and blob URLs
 ├── lib/
-│   ├── namespace.js   module registry (executeScript cannot use ES modules)
-│   ├── geometry.js    CSS ⇄ device-pixel maths
-│   └── clipboard.js   writes the PNG from the focused page
+│   ├── namespace.js   module registry (injected scripts can't use ES modules)
+│   ├── geometry.js    CSS pixel ⇄ device pixel maths
+│   └── clipboard.js   writes the PNG from the page you clicked in
 ├── engine/
-│   ├── ops.js         append-only annotation list; undo/redo
-│   ├── render.js      replays ops over the bitmap
-│   └── stitch.js      composes full-page tiles onto one canvas
+│   ├── ops.js         the list of marks; undo and redo
+│   ├── render.js      replays the marks over the image
+│   └── stitch.js      joins whole-page tiles into one image
 ├── overlay/
-│   ├── inject.js      lifecycle, keyboard, teardown
-│   ├── stage.js       shadow host, frozen backdrop, scrim
-│   ├── selection.js   frame, handles, dimension badge
-│   ├── fullpage.js    scroll-and-stitch loop, sticky/lazy handling
-│   ├── annotate.js    annotation canvas and tools
-│   ├── rail.js        tool rail
-│   ├── toolbar.js     command pill
-│   ├── tokens.css     design tokens
-│   └── overlay.css    overlay UI
-└── fallback/          editor window: brave:// pages, and full-page captures
-    ├── editor.html
-    └── editor.js
-tools/                 icon generation and the test suite
+│   ├── inject.js      start-up, keyboard, tidy-up
+│   ├── stage.js       shadow root, frozen backdrop, dimming, flash
+│   ├── selection.js   frame, handles, size label
+│   ├── fullpage.js    the scroll-and-capture loop
+│   ├── annotate.js    drawing tools
+│   ├── rail.js        tool bar
+│   ├── toolbar.js     top bar
+│   ├── tokens.css     design tokens ("dusk glass")
+│   └── overlay.css    overlay styles and motion
+└── fallback/          the editing window, for browser pages and whole-page captures
+tools/                 tests, icon and poster rendering
 ```
 
 Three decisions shape everything else:
 
-**Capture before you draw.** The background worker screenshots the viewport
-before the overlay exists. That makes it structurally impossible for the
-extension's own UI to appear in your capture, and it is what produces the frozen
-page.
+**Capture first, then draw.** The screen is captured before the overlay exists.
+That's why our own buttons can never appear in your screenshot, and it's what
+makes the page "freeze".
 
-**Everything lives in a shadow root.** The overlay mounts with `all: initial` on
-`:host`, so no page stylesheet can reach our chrome and none of ours disturbs the
-page. Design tokens are redeclared on `:host` because custom properties *do*
-inherit through a shadow boundary — the one thing Shadow DOM does not isolate.
+**Everything lives in a shadow root.** No website's styles can reach the overlay,
+and the overlay's styles can't disturb the website. The one thing a shadow root
+doesn't shield, the host element's own size and position, is pinned inline so a
+site's CSS can't move it either.
 
-**Marks are records, not paint.** The image is produced by replaying an op list
-over the bitmap. Painting straight onto a canvas is simpler right up until
-someone wants their last stroke back.
+**Marks are records, not paint.** The final image is made by replaying a list of
+marks over the capture. That's what makes undo possible.
 
-## Development
+### The design
+
+The look comes from the Nhako family. [Nhako Tools](https://tools.nhako.com) gave
+it the brand pink (`#FF91E7`) and the rule of one typeface, San Francisco,
+through the system and never downloaded. NhakoSearch and NeraOS gave it lavender
+(`#C3A6F0`), the plum ink, the butterfly, and the striped progress bar. The feel
+comes from macOS's own screenshot tool: frosted dark glass, hairline edges, and
+springs that settle instead of bouncing.
+
+The toolbar stays dark on purpose. It has to be readable over a white article and
+over a black video. Every text colour's contrast is worked out and written next
+to it in [`tokens.css`](src/overlay/tokens.css), and each one clears WCAG AA even
+with a pure white page behind the glass.
+
+## For developers
 
 ```bash
-./tools/test.sh              # everything below
-node tools/test-geometry.mjs # pixel maths, incl. a fuzz pass
-node tools/test-selection.mjs# framing, clamping, handle flipping
-node tools/test-ops.mjs      # undo/redo history semantics
-node tools/test-background.mjs # service worker, via a stubbed chrome
-node tools/test-modules.mjs  # injection order and the module graph
-node tools/preview.mjs out/  # drives real Chromium over CDP
+./tools/test.sh
 ```
 
-`tools/preview.mjs` is worth knowing about. It launches headless Chromium over
-the DevTools Protocol — no dependencies, using Node 22's built-in `WebSocket` —
-produces the backdrop with a real `Page.captureScreenshot`, and drives **real
-dispatched input**, so the pointer path under test is the one you get. It
-asserts things a unit test cannot: that the scrim leaves the framed region
-pixel-identical to the page, that blur genuinely destroys local contrast, that
-three launches leave exactly one overlay in the DOM.
+That runs everything: about 480 unit checks and 218 checks in a real browser.
 
-It also produces the screenshot at the top of this file:
+```bash
+node tools/preview.mjs out/
+```
+
+This drives a real headless Chromium with real mouse and keyboard input, using
+nothing but Node 22. It checks things a unit test can't: that the dimming leaves
+the framed area pixel-for-pixel untouched, that blur really destroys detail, that
+a website's own CSS can't move the overlay, and that pressing the shortcut three
+times leaves exactly one overlay on the page.
+
+It also makes the screenshot at the top of this page:
 
 ```bash
 node tools/preview.mjs out/ --hero
 ```
 
-Regenerate the icons with `python3 tools/make-icons.py`.
+To rebuild the brand assets:
+
+```bash
+python3 tools/make-icons.py
+```
+
+```bash
+node tools/render-poster.mjs
+```
 
 ## Where it differs from Opera
 
-Deliberately, and it is short:
+On purpose, and not by much:
 
-- **Zoom is a magnifier loupe, not a canvas zoom.** Opera's editor is a separate
-  surface, so it can scale freely. This overlay sits 1:1 over the live page —
-  scaling it would desync the frame from the pixels it depicts. The loupe
-  follows the cursor; click to park it somewhere and look properly, click again
-  to release it.
-- **No sticker or emoji picker.** An asset set and a picker UI for little return.
-- **No selfie camera.** It needs webcam permission, which is a poor trade for a
-  tool whose main promise is that nothing leaves your machine.
-- **No horizontal stitching.** Pages wider than the viewport are captured at
-  viewport width. Only the document scroller is driven, so content inside an
-  inner `overflow: scroll` element is captured as it appears.
-- **No per-tile progress for screen readers.** The start and end of a full-page
-  capture are announced; the middle is deliberately quiet, because a polite
-  live region firing twelve times is chatter rather than information.
-- **Infinite-scroll feeds are not special-cased.** A page that grows as you
-  scroll it is captured to whatever extent existed when the capture started.
+- **Zoom is a magnifier, not a zoomed canvas.** The overlay sits exactly on top
+  of the live page, so zooming it would pull the frame away from what it's
+  showing. The magnifier follows your pointer; click to park it, click again to
+  let it go.
+- **No stickers or emoji.** A lot of extra weight for very little.
+- **No selfie camera.** It would need webcam access, and the whole promise is
+  that nothing leaves your computer.
+- **Whole-page captures go down, not sideways.** Wide pages are captured at the
+  width of your window, and scrolling boxes inside a page are captured as they
+  look on screen.
+- **Endless feeds aren't chased.** A page that keeps growing as you scroll is
+  captured as far as it existed when you started.
+
+## Launch poster
+
+<div align="center">
+  <img src="docs/launch/poster.png" alt="NhakoCapture launch poster: 'Screenshot anything. Never leave the tab.' above a browser window showing the overlay in use" width="600">
+</div>
 
 ## Status
 
-Version 2.0.0 is a ground-up rebuild of v1.0. Capture, framing, annotation,
-copy, save, PDF, full-page scroll-and-stitch and the restricted-page editor
-window are all implemented, with **467 unit checks and 213 browser checks**
-covering them (`./tools/test.sh`).
-
-The browser checks drive a real Chromium over the DevTools protocol: real
-input, real shadow DOM, real computed styles. They are not a substitute for
-loading the extension in Brave, and the task list tracks which behaviours have
-been verified there and which have only been unit-tested.
-
-The one piece of work still outstanding is that verification matrix: walking
-the full feature set in a real browser with the extension loaded unpacked,
-rather than in the harness.
+Version 2.1. Everything described above works. The browser checks drive a real
+Chromium with real input, but they don't replace trying the extension in your own
+browser, and that hands-on pass is the one piece of work still open.
 
 ## Credits
 
-Built by **kimzam** to restore the Opera feel to browser of your choice.
+Made by **kimzam**, to bring the Opera feel to whichever browser you like.
+Part of the Nhako family.

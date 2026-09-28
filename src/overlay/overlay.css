@@ -6,6 +6,11 @@
  *
  * Custom properties are the exception -- they DO cross a shadow boundary -- which
  * is why tokens.css redeclares every --nc-* name on :host.
+ *
+ * Motion follows one rule: things that ARRIVE get a spring, things you are
+ * WAITING on never move. The pill drops in, the rail rises, handles pop once a
+ * frame is set, and a finished copy gets a shutter flash. Nothing animates
+ * while you drag, and nothing delays the capture itself.
  */
 
 :host {
@@ -18,8 +23,10 @@
   font-family: var(--nc-font);
   font-size: var(--nc-text-base);
   line-height: var(--nc-leading-normal);
+  letter-spacing: var(--nc-tracking-normal);
   color: var(--nc-text);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 *,
@@ -45,6 +52,31 @@
 
 /* Crosshair stays put even with a frame committed -- you can always draw a new
    one over the old. The marquee and handles carry their own cursors. */
+
+/* --- entrance and exit ----------------------------------------------------- */
+@keyframes nc-fade-in { from { opacity: 0; } }
+@keyframes nc-fade-out { to { opacity: 0; } }
+
+/* The pill drops from the top edge, the way a macOS HUD arrives. translateX is
+   repeated in every frame because it is how the pill is centred. */
+@keyframes nc-drop-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(-14px) scale(0.96); }
+}
+
+/* The rail rises from the frame it belongs to. */
+@keyframes nc-rise-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+@keyframes nc-pop-in {
+  from { transform: scale(0); }
+}
+
+/* Leaving is quick and flat: the user has what they came for. */
+.nc-root.is-leaving {
+  animation: nc-fade-out var(--nc-duration-normal) var(--nc-ease) both;
+  pointer-events: none;
+}
 
 /* --- frozen backdrop ------------------------------------------------------
  * The viewport as it was the instant before the overlay existed. Sized to the
@@ -72,7 +104,8 @@
   position: absolute;
   background: var(--nc-scrim);
   pointer-events: none;
-  transition: opacity var(--nc-duration-fast) var(--nc-ease);
+  /* The page dims rather than snapping dark: the one cue that it just froze. */
+  animation: nc-fade-in var(--nc-duration-normal) var(--nc-ease) both;
 }
 
 /* --- selection ------------------------------------------------------------ */
@@ -80,7 +113,7 @@
   position: absolute;
   pointer-events: auto;
   cursor: move;
-  /* White outer, purple inner. A marquee sits on top of whatever the page
+  /* White outer, pink inner. A marquee sits on top of whatever the page
      happens to contain, so no single colour can promise contrast against it. */
   outline: 1px solid var(--nc-marquee-outer);
   box-shadow: inset 0 0 0 var(--nc-marquee-width) var(--nc-marquee-inner);
@@ -88,23 +121,37 @@
 
 .nc-marquee[hidden] { display: none; }
 
+/* Round, white, with a pink rim and a soft shadow: the macOS crop handle. */
 .nc-handle {
   position: absolute;
   width: var(--nc-handle-size);
   height: var(--nc-handle-size);
   background: var(--nc-handle-fill);
   border: 2px solid var(--nc-handle-border);
-  border-radius: 2px;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
   /* Constant screen size: handles are chrome, not content, and must stay
      hittable regardless of devicePixelRatio. */
+  transition: transform var(--nc-duration-fast) var(--nc-ease-out);
+}
+
+.nc-handle:hover { transform: scale(1.25); }
+
+/* Handles are for adjusting a frame, not drawing one: they stay out of the way
+   during the first drag and pop in once there is something to adjust. The pop
+   runs on the transition into adjusting, not on every move afterwards. */
+.nc-root[data-mode='drawing'] .nc-handle { visibility: hidden; }
+.nc-root[data-mode='adjusting'] .nc-handle {
+  animation: nc-pop-in var(--nc-duration-enter) var(--nc-ease-spring) both;
 }
 
 /* Fitts, not cosmetics: the visible handle stays small, the target does not. */
 .nc-handle::before {
   content: '';
   position: absolute;
-  inset: calc((var(--nc-handle-size) - var(--nc-handle-hit)) / 2);
+  inset: calc((var(--nc-handle-size) - var(--nc-handle-hit)) / 2 - 2px);
+  border-radius: 50%;
 }
 
 .nc-handle[data-dir='nw'] { cursor: nwse-resize; }
@@ -121,11 +168,14 @@
   position: absolute;
   padding: var(--nc-space-1) var(--nc-space-3);
   background: var(--nc-surface-glass);
-  border: 1px solid var(--nc-border);
+  backdrop-filter: var(--nc-glass-blur);
+  -webkit-backdrop-filter: var(--nc-glass-blur);
   border-radius: var(--nc-radius-sm);
+  box-shadow: var(--nc-edge-light), 0 0 0 0.5px rgba(0, 0, 0, 0.5);
   color: var(--nc-text);
   font-size: var(--nc-text-xs);
-  font-weight: var(--nc-weight-medium);
+  font-weight: var(--nc-weight-semibold);
+  letter-spacing: 0.01em;
   white-space: nowrap;
   pointer-events: none;
   /* Tabular figures stop the badge twitching as the digits change mid-drag. */
@@ -143,39 +193,100 @@
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  gap: var(--nc-space-2);
+  gap: var(--nc-space-1);
   padding: var(--nc-space-2);
   background: var(--nc-surface-glass);
-  border: 1px solid var(--nc-border);
   border-radius: var(--nc-radius-pill);
   box-shadow: var(--nc-shadow-toolbar);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--nc-glass-blur);
+  -webkit-backdrop-filter: var(--nc-glass-blur);
   pointer-events: auto;
   max-width: calc(100vw - var(--nc-space-7));
+  animation: nc-drop-in var(--nc-duration-enter) var(--nc-ease-spring) both;
+  transition: opacity var(--nc-duration-normal) var(--nc-ease);
 }
 
+/* Over the frame, the pill steps back but stays in reach: pointing at it
+   brings it forward again. */
+.nc-pill.is-receded { opacity: 0.3; }
+.nc-pill.is-receded:hover,
+.nc-pill.is-receded:focus-within { opacity: 1; }
+
 .nc-hint {
-  padding: 0 var(--nc-space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--nc-space-3);
+  padding: 0 var(--nc-space-4) 0 var(--nc-space-2);
   color: var(--nc-text-muted);
   font-size: var(--nc-text-base);
   white-space: nowrap;
 }
 
+/* A finished copy or save says so with a tick that draws itself in -- the
+   one moment in the whole flow that is allowed to celebrate. */
+.nc-hint[data-tone='success'] { color: var(--nc-text); font-weight: var(--nc-weight-medium); }
+.nc-hint[data-tone='success']::before {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  animation: nc-pop-in var(--nc-duration-enter) var(--nc-ease-spring) both;
+  /* A plum tick over the brand gradient disc. */
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.6 8.4l2.2 2.2 4.6-4.9' fill='none' stroke='%232a0f26' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),
+    linear-gradient(135deg, #ff9ee0, #c7aaf5);
+}
+.nc-hint[data-tone='error'] { color: #ffb4ae; font-weight: var(--nc-weight-medium); }
+
+/* Working on it: the NeraOS boot bar, pink and lavender stripes marching.
+   Only ever up for the moment a copy or save takes. */
+@keyframes nc-march { to { background-position: 16px 0; } }
+.nc-hint[data-tone='busy']::before {
+  content: '';
+  flex: none;
+  width: 26px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--nc-stripes);
+  animation: nc-march 480ms linear infinite;
+}
+
+/* --- the family mark ------------------------------------------------------- */
+.nc-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: var(--nc-space-1);
+  flex: none;
+}
+.nc-mark svg { width: 20px; height: 20px; display: block; }
+/* One slow wingbeat as the pill lands -- NeraOS's flap, played once. */
+@keyframes nc-flap {
+  0%, 100% { transform: scaleX(1); }
+  50%      { transform: scaleX(0.55); }
+}
+.nc-mark svg {
+  transform-origin: 50% 50%;
+  animation: nc-flap 520ms var(--nc-ease) 260ms 1 both;
+}
+
 .nc-divider {
   width: 1px;
   align-self: stretch;
-  margin: var(--nc-space-1) var(--nc-space-1);
+  margin: var(--nc-space-3) var(--nc-space-2);
   background: var(--nc-border-strong);
 }
 
-/* --- buttons -------------------------------------------------------------- */
 /* The cap notice: a statement about what the capture IS, not guidance about
-   what to do with it. Coloured rather than sharing the hint's muted grey,
+   what to do with it. Coloured rather than sharing the hint's muted tone,
    because the content hierarchy ranks it above the toolset -- it changes what
    the user believes they are holding. Truncates rather than wrapping: a pill
    that grows to two lines shifts everything under it. */
 .nc-notice {
+  padding-left: var(--nc-space-5);
   color: var(--nc-notice);
   font-size: var(--nc-text-base);
   font-weight: var(--nc-weight-medium);
@@ -186,11 +297,13 @@
 }
 .nc-notice[hidden] { display: none; }
 
+/* --- buttons -------------------------------------------------------------- */
 .nc-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--nc-space-3);
-  padding: var(--nc-space-3) var(--nc-space-5);
+  height: 32px;
+  padding: 0 var(--nc-space-5);
   border: none;
   border-radius: var(--nc-radius-pill);
   background: transparent;
@@ -198,16 +311,19 @@
   font-family: inherit;
   font-size: var(--nc-text-base);
   font-weight: var(--nc-weight-medium);
+  letter-spacing: inherit;
   line-height: 1;
   white-space: nowrap;
   cursor: pointer;
   transition:
     background var(--nc-duration-fast) var(--nc-ease),
-    color var(--nc-duration-fast) var(--nc-ease);
+    color var(--nc-duration-fast) var(--nc-ease),
+    transform var(--nc-duration-fast) var(--nc-ease-out);
 }
 
 .nc-btn:hover { background: var(--nc-surface-raised); }
-.nc-btn:active { background: var(--nc-surface-sunken); }
+/* Pressing in, not colouring in: the control gives under the finger. */
+.nc-btn:active { background: var(--nc-surface-sunken); transform: scale(0.96); }
 
 /* Colour only. `opacity` is the reflexive way to grey a control and it would
    drag --nc-text-disabled back under the 4.5:1 floor it was chosen to clear,
@@ -218,7 +334,7 @@
   cursor: default;
 }
 .nc-btn.is-disabled:hover,
-.nc-btn.is-disabled:active { background: transparent; }
+.nc-btn.is-disabled:active { background: transparent; transform: none; }
 
 /* The focus ring is NOT suppressed here. The control keeps its place in the
    tab order, so it must keep the evidence that it has focus. */
@@ -229,14 +345,20 @@
 }
 
 .nc-btn--primary {
-  background: var(--nc-accent);
+  background: var(--nc-accent-fill);
   color: var(--nc-text-on-accent);
+  font-weight: var(--nc-weight-semibold);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45),
+              0 1px 2px rgba(0, 0, 0, 0.3);
 }
-.nc-btn--primary:hover { background: var(--nc-accent-hover); }
-.nc-btn--primary:active { background: var(--nc-accent-active); }
+.nc-btn--primary:hover { background: var(--nc-accent-fill-hover); }
+.nc-btn--primary:active { background: var(--nc-accent-fill); filter: brightness(0.94); }
+.nc-btn--primary:focus-visible {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), var(--nc-shadow-focus);
+}
 
 .nc-btn--icon {
-  padding: var(--nc-space-3);
+  padding: 0 var(--nc-space-4);
   color: var(--nc-text-muted);
 }
 .nc-btn--icon:hover { color: var(--nc-text); }
@@ -251,7 +373,7 @@
   flex: none;
   stroke: currentColor;
   fill: none;
-  stroke-width: 2;
+  stroke-width: 1.8;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
@@ -280,6 +402,22 @@
    the frame, not the pen, so the edges can be adjusted without first putting
    the tool down. Marks are anchored to the page, so reframing never moves them. */
 
+/* --- shutter flash ----------------------------------------------------------
+ * The frame blinks white the instant a copy or save lands, like a camera
+ * shutter -- the macOS screenshot cue, and a clear "got it" for anyone who
+ * cannot see the pill from where they are looking.
+ */
+@keyframes nc-flash {
+  from { opacity: 0.75; }
+  to   { opacity: 0; }
+}
+.nc-flash {
+  position: absolute;
+  background: #fff;
+  pointer-events: none;
+  animation: nc-flash 420ms var(--nc-ease-out) both;
+}
+
 /* --- magnifier ------------------------------------------------------------
  * The zoom tool. Opera zooms its editor canvas, which cannot work here: this
  * overlay is pinned 1:1 to the live page, and scaling it would desync the
@@ -288,12 +426,12 @@
  */
 .nc-loupe {
   position: absolute;
-  width: 140px;
-  height: 140px;
-  margin: -70px 0 0 -70px;
+  width: 148px;
+  height: 148px;
+  margin: -74px 0 0 -74px;
   border-radius: 50%;
-  border: 2px solid var(--nc-accent-bright);
-  box-shadow: var(--nc-shadow-popover);
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 2px var(--nc-accent-bright), var(--nc-shadow-popover);
   background: var(--nc-surface-sunken);
   image-rendering: pixelated;
   pointer-events: none;
@@ -306,13 +444,15 @@
 .nc-textentry {
   position: absolute;
   min-width: 120px;
-  padding: 0;
+  padding: 0 2px;
   border: none;
-  border-bottom: 2px dashed var(--nc-accent-bright);
-  background: rgba(0, 0, 0, 0.35);
+  border-bottom: 2px solid var(--nc-accent-bright);
+  border-radius: 3px 3px 0 0;
+  background: rgba(29, 22, 32, 0.45);
   font-weight: var(--nc-weight-semibold);
   line-height: 1.2;
   outline: none;
+  caret-color: var(--nc-accent-bright);
   pointer-events: auto;
   z-index: var(--nc-z-popover);
 }
@@ -325,15 +465,19 @@
   gap: var(--nc-space-2);
   padding: var(--nc-space-2);
   background: var(--nc-surface-glass);
-  border: 1px solid var(--nc-border);
   border-radius: var(--nc-radius-lg);
   box-shadow: var(--nc-shadow-toolbar);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: var(--nc-glass-blur);
+  -webkit-backdrop-filter: var(--nc-glass-blur);
   pointer-events: auto;
   z-index: var(--nc-z-toolbar);
   max-width: calc(100vw - var(--nc-space-7));
   flex-wrap: wrap;
+  transform-origin: 50% 0;
+  /* Runs each time the rail goes from hidden to shown -- that is, each time a
+     frame is committed -- and not while it follows a frame being moved. */
+  animation: nc-rise-in var(--nc-duration-enter) var(--nc-ease-spring) both;
+  transition: opacity var(--nc-duration-normal) var(--nc-ease);
 }
 
 .nc-rail[hidden] { display: none; }
@@ -344,22 +488,34 @@
 .nc-rail.is-overlaid:focus-within { opacity: 1; }
 
 .nc-group {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--nc-space-1);
-  padding-right: var(--nc-space-2);
-  border-right: 1px solid var(--nc-border-strong);
+  padding-right: var(--nc-space-3);
 }
 
-.nc-group:last-child { padding-right: 0; border-right: none; }
+/* Hairline separators that stop short of the edges, like a macOS toolbar. */
+.nc-group::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 1px;
+  background: var(--nc-border-strong);
+}
+
+.nc-group:last-child { padding-right: 0; }
+.nc-group:last-child::after { display: none; }
 .nc-group--done { gap: var(--nc-space-2); padding-left: var(--nc-space-1); }
 
 .nc-tool {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   padding: 0;
   border: none;
   border-radius: var(--nc-radius-md);
@@ -367,36 +523,45 @@
   color: var(--nc-text-muted);
   cursor: pointer;
   transition: background var(--nc-duration-fast) var(--nc-ease),
-              color var(--nc-duration-fast) var(--nc-ease);
+              color var(--nc-duration-fast) var(--nc-ease),
+              box-shadow var(--nc-duration-fast) var(--nc-ease),
+              transform var(--nc-duration-fast) var(--nc-ease-out);
 }
 
-.nc-tool svg { width: 17px; height: 17px; }  /* overrides the shared 16px */
+.nc-tool svg { width: 18px; height: 18px; }  /* overrides the shared 16px */
 .nc-tool:hover:not(:disabled) { background: var(--nc-surface-raised); color: var(--nc-text); }
+.nc-tool:active:not(:disabled) { transform: scale(0.9); }
 .nc-tool:focus-visible { outline: none; box-shadow: var(--nc-shadow-focus); }
 .nc-tool:disabled { color: var(--nc-text-faint); cursor: default; }
 
-/* Active tool uses --nc-accent-bright, never --nc-accent: the base purple is
-   2.80:1 on this surface and fails WCAG 1.4.11's 3:1 floor for UI. */
-.nc-tool.is-active {
-  background: var(--nc-surface-sunken);
+/* The chosen tool sits in a pink-tinted well, icon in brand pink. */
+.nc-tool.is-active,
+.nc-tool.is-active:hover {
+  background: var(--nc-accent-well);
   color: var(--nc-accent-bright);
-  box-shadow: inset 0 0 0 1px var(--nc-accent-bright);
+  box-shadow: inset 0 0 0 1px rgba(255, 145, 231, 0.45);
 }
 
 /* --- ink swatches ---------------------------------------------------------- */
 .nc-swatch {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  margin: 0 1px;
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: none;
   border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22),
+              inset 0 -2px 3px rgba(0, 0, 0, 0.18);
   cursor: pointer;
-  transition: transform var(--nc-duration-fast) var(--nc-ease);
+  transition: transform var(--nc-duration-fast) var(--nc-ease-spring),
+              box-shadow var(--nc-duration-fast) var(--nc-ease);
 }
 
 .nc-swatch:hover { transform: scale(1.15); }
+.nc-swatch:active { transform: scale(0.92); }
 .nc-swatch:focus-visible { outline: none; box-shadow: var(--nc-shadow-focus); }
 .nc-swatch.is-active {
+  transform: scale(1.05);
   box-shadow: 0 0 0 2px var(--nc-surface), 0 0 0 4px var(--nc-accent-bright);
 }
 
@@ -404,7 +569,7 @@
 .nc-swatch[data-ink='amber'] { background: var(--nc-ink-amber); }
 .nc-swatch[data-ink='green'] { background: var(--nc-ink-green); }
 .nc-swatch[data-ink='blue'] { background: var(--nc-ink-blue); }
-.nc-swatch[data-ink='purple'] { background: var(--nc-ink-purple); }
+.nc-swatch[data-ink='pink'] { background: var(--nc-ink-pink); }
 .nc-swatch[data-ink='white'] { background: var(--nc-ink-white); }
 .nc-swatch[data-ink='black'] { background: var(--nc-ink-black); }
 
@@ -413,24 +578,28 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: none;
   border-radius: var(--nc-radius-sm);
   background: transparent;
   cursor: pointer;
+  transition: background var(--nc-duration-fast) var(--nc-ease);
 }
 
 .nc-weight i {
   display: block;
   border-radius: 50%;
   background: var(--nc-text-muted);
+  transition: background var(--nc-duration-fast) var(--nc-ease),
+              transform var(--nc-duration-fast) var(--nc-ease-spring);
 }
 
 .nc-weight:hover { background: var(--nc-surface-raised); }
+.nc-weight:hover i { transform: scale(1.2); }
 .nc-weight:focus-visible { outline: none; box-shadow: var(--nc-shadow-focus); }
-.nc-weight.is-active { background: var(--nc-surface-sunken); }
+.nc-weight.is-active { background: var(--nc-accent-well); }
 .nc-weight.is-active i { background: var(--nc-accent-bright); }
 
 /* --- narrow windows -------------------------------------------------------
@@ -439,14 +608,15 @@
  */
 @media (max-width: 640px) {
   .nc-hint { display: none; }
+  .nc-mark { display: none; }
   .nc-btn__label { display: none; }
   /* ...except on Copy and Save. They are the two controls the whole overlay
      exists to reach, and there are only two of them, so they can afford the
      ~90px their labels cost even here. Everything else in the rail is a tool
-     whose icon is already its whole identity; these two would become a purple
-     square and a downward arrow. */
+     whose icon is already its whole identity; these two would become a pink
+     pill and a downward arrow. */
   .nc-group--done .nc-btn__label { display: inline; }
-  .nc-btn { padding: var(--nc-space-3); }
+  .nc-btn { padding: 0 var(--nc-space-4); }
   /* The rail carries far more controls than the pill; below this width it has
      to be allowed to wrap onto a second row rather than overflow. */
   .nc-rail { justify-content: center; }
@@ -455,7 +625,7 @@
 /* --- forced colors --------------------------------------------------------
  *
  * tokens.css already hands our palette back to the OS in this mode, which is
- * right for chrome: a toolbar painted in our greys over a high-contrast desktop
+ * right for chrome: a toolbar painted in our tones over a high-contrast desktop
  * is an unreadable slab.
  *
  * It is wrong for the two controls below, where the colour IS the content.
@@ -470,11 +640,20 @@
     forced-color-adjust: none;
   }
 
+  /* The gradient fill is a background-image, which forced colors drops; the
+     button would keep its plum text on the system canvas. Hand both back. */
+  .nc-btn--primary {
+    background: ButtonFace;
+    color: ButtonText;
+    border: 1px solid ButtonText;
+  }
+
   /* box-shadow is not painted in forced-colors, so the selected-ink and
      selected-weight rings would vanish along with it. An outline is, and it
      sits outside the swatch rather than over the ink it is marking. */
   .nc-swatch.is-active,
-  .nc-weight.is-active {
+  .nc-weight.is-active,
+  .nc-tool.is-active {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
@@ -490,15 +669,38 @@
 }
 
 /* --- reduced motion -------------------------------------------------------
- * tokens.css already collapses the durations; this kills the transitions
- * outright so nothing eases at 0ms and still schedules a frame.
+ * tokens.css already collapses the durations; this removes the motion itself
+ * so nothing eases at 0ms and still schedules a frame. The flash is kept as a
+ * plain, brief fade: it carries meaning ("it worked"), and a fade is not motion.
  */
 @media (prefers-reduced-motion: reduce) {
   .nc-scrim,
+  .nc-pill,
+  .nc-rail,
+  .nc-root[data-mode='adjusting'] .nc-handle,
+  .nc-hint[data-tone='success']::before,
+  .nc-hint[data-tone='busy']::before,
+  .nc-mark svg {
+    animation: none;
+  }
   .nc-btn,
   .nc-tool,
   .nc-swatch,
-  .nc-rail {
+  .nc-weight,
+  .nc-weight i,
+  .nc-handle,
+  .nc-rail,
+  .nc-pill {
     transition: none;
   }
+  .nc-btn:active,
+  .nc-tool:active,
+  .nc-swatch:hover,
+  .nc-swatch:active,
+  .nc-swatch.is-active,
+  .nc-handle:hover,
+  .nc-weight:hover i {
+    transform: none;
+  }
+  .nc-flash { animation-duration: 240ms; animation-timing-function: linear; }
 }

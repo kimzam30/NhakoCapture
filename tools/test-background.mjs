@@ -32,7 +32,8 @@ function ok(label, cond) { eq(label, !!cond, true); }
 function loadBackground({ captureFails = false, injectFails = false, cssFails = false,
                          attachFails = false, printFails = false,
                          offscreenSilentFor = 0, offscreenNeverAnswers = false, windowFails = false,
-                         existingContexts = 0, createFails = null, overlayUp = false } = {}) {
+                         existingContexts = 0, createFails = null, overlayUp = false,
+                         activeTabId = null } = {}) {
   let liveContexts = existingContexts;
   let sends = 0;
   const calls = [];
@@ -50,6 +51,12 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     tabs: {
       onRemoved: { addListener: (fn) => { listeners.tabRemoved = fn; } },
       onUpdated: { addListener: (fn) => { listeners.tabUpdated = fn; } },
+      /* Which tab is active in the window. null leaves the question
+       * unanswered, as an older browser would. */
+      query: async (...a) => {
+        calls.push({ name: 'tabs.query', args: a });
+        return activeTabId === null ? [] : [{ id: activeTabId }];
+      },
       captureVisibleTab: async (...a) => {
         calls.push({ name: 'captureVisibleTab', args: a });
         if (captureFails) throw new Error('capture denied');
@@ -371,7 +378,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   const dl = calls.find((c) => c.name === 'downloads.download');
   ok('download was requested', !!dl);
   eq('destination picker is opened', dl.args[0].saveAs, true);
-  ok('filename is timestamped .png', /^Nhako_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.png$/.test(dl.args[0].filename));
+  ok('filename is timestamped .png', /^NhakoCapture \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png$/.test(dl.args[0].filename));
 }
 
 /* --- PDF: the debugger route ---------------------------------------------- */
@@ -393,7 +400,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   const dl = calls.find((c) => c.name === 'downloads.download');
   ok('a download was requested', !!dl);
   eq('destination picker is opened', dl.args[0].saveAs, true);
-  ok('saved as .pdf', /^Nhako_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}\.pdf$/.test(dl.args[0].filename));
+  ok('saved as .pdf', /^NhakoCapture \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.pdf$/.test(dl.args[0].filename));
   ok('never falls back to the print dialog when the debugger works',
     !seq.includes('executeScript'));
 }
@@ -530,12 +537,12 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   eq('scoped to the tab', text.args[0].tabId, 5);
 
   const bg = calls.filter((c) => c.name === 'setBadgeBackgroundColor').pop();
-  eq('progress uses the progress colour', bg.args[0].color, '#8a2be2');
+  eq('progress uses the progress colour', bg.args[0].color, '#ff91e7');
 
   const fg = calls.filter((c) => c.name === 'setBadgeTextColor').pop();
   ok('progress sets its text colour explicitly rather than inheriting white',
      fg !== undefined);
-  eq('and it is the token value', fg.args[0].color, '#ffffff');
+  eq('and it is the token value', fg.args[0].color, '#2a0f26');
 
   const title = calls.filter((c) => c.name === 'setTitle').pop();
   ok('the tooltip carries the exact figure the badge may have rounded',
@@ -564,7 +571,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   eq('progress clears to empty', text.args[0].text, '');
   const title = calls.filter((c) => c.name === 'setTitle').pop();
   eq('and the tooltip goes back to idle', title.args[0].title,
-     'Nhako Capture (Ctrl+Shift+5)');
+     'NhakoCapture');
 }
 
 {
@@ -761,7 +768,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   eq('navigating away clears the counter', text.args[0].text, '');
   const title = calls.filter((c) => c.name === 'setTitle').pop();
   eq('and the tooltip stops claiming a capture', title.args[0].title,
-     'Nhako Capture (Ctrl+Shift+5)');
+     'NhakoCapture');
 }
 
 {
@@ -880,6 +887,35 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   await fireIdle();
   ok('...and is released once the editor says it is done',
     names().includes('closeDocument'), names().join(','));
+}
+
+/* --- a tile is only taken of the tab that asked for it -------------------- */
+{
+  const { listeners, names } = loadBackground({ activeTabId: 2 });
+  let reply;
+  listeners.message({ type: 'nc:capture-tile' }, { tab: { id: 1, windowId: 3 } }, (r) => { reply = r; });
+  await new Promise((r) => setTimeout(r, 10));
+  ok('another tab active: the tile is refused as hidden', reply?.hidden === true, JSON.stringify(reply));
+  ok('...without photographing the other tab', !names().includes('captureVisibleTab'),
+     names().join(','));
+}
+
+{
+  const { listeners, names } = loadBackground({ activeTabId: 1 });
+  let reply;
+  listeners.message({ type: 'nc:capture-tile' }, { tab: { id: 1, windowId: 3 } }, (r) => { reply = r; });
+  await new Promise((r) => setTimeout(r, 10));
+  ok('the asking tab active: the tile is taken', reply?.ok === true && !!reply.dataUrl,
+     JSON.stringify(reply));
+  ok('...by a real capture', names().includes('captureVisibleTab'));
+}
+
+/* --- a dismissed Save As is a change of mind, not an error ----------------- */
+{
+  const { sandbox } = loadBackground();
+  ok('USER_CANCELED is a cancel', sandbox.isCancel(new Error('USER_CANCELED')));
+  ok('"Download canceled" is a cancel too', sandbox.isCancel(new Error('Download canceled')));
+  ok('a real failure is not', !sandbox.isCancel(new Error('NETWORK_FAILED')));
 }
 
 console.log(`\nbackground: ${pass} passed, ${failures.length} failed\n`);

@@ -26,16 +26,25 @@
     save: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   };
 
+  /* Named for what they do to the picture, in the words people already use
+   * for them. The ids are internal and stay put; the keys match the labels. */
   const TOOLS = [
-    { id: 'pencil', label: 'Pencil', key: 'P' },
+    { id: 'pencil', label: 'Pen', key: 'P' },
     { id: 'arrow', label: 'Arrow', key: 'A' },
     { id: 'blur', label: 'Blur', key: 'B' },
-    { id: 'highlight', label: 'Highlight', key: 'H' },
+    { id: 'highlight', label: 'Highlighter', key: 'H' },
     { id: 'text', label: 'Text', key: 'T' },
-    { id: 'zoom', label: 'Zoom', key: 'Z' },
+    { id: 'zoom', label: 'Magnifier', key: 'Z' },
   ];
 
-  const INKS = ['red', 'amber', 'green', 'blue', 'purple', 'white', 'black'];
+  const INKS = ['red', 'amber', 'green', 'blue', 'pink', 'white', 'black'];
+
+  /* Shortcut hints in the platform's own notation. A Mac user reading
+   * "Ctrl+Z" in a tooltip has to translate it; "⌘Z" they just read. */
+  const IS_MAC = /Mac|iPhone|iPad/.test(
+    globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || '');
+  const MOD = IS_MAC ? '⌘' : 'Ctrl+';
+  const SHIFT = IS_MAC ? '⇧' : 'Shift+';
 
   const svg = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
 
@@ -96,7 +105,7 @@
       b.type = 'button';
       b.className = 'nc-swatch';
       b.dataset.ink = ink;
-      b.title = ink[0].toUpperCase() + ink.slice(1);
+      b.title = ink[0].toUpperCase() + ink.slice(1);  // "Red", "Pink"...
       b.setAttribute('aria-label', `${b.title} ink`);
       b.addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
@@ -115,7 +124,7 @@
       b.className = 'nc-weight';
       b.dataset.weight = name;
       b.innerHTML = `<i style="width:${value + 2}px;height:${value + 2}px"></i>`;
-      b.title = `${name[0].toUpperCase()}${name.slice(1)} stroke`;
+      b.title = `${name[0].toUpperCase()}${name.slice(1)} line`;
       b.setAttribute('aria-label', b.title);
       b.addEventListener('click', (e) => {
         e.preventDefault(); e.stopPropagation();
@@ -127,8 +136,9 @@
 
     /* history */
     const histGroup = group(rail);
-    const undoBtn = iconButton('undo', 'Undo', 'Ctrl+Z', () => ops.undo());
-    const redoBtn = iconButton('redo', 'Redo', 'Ctrl+Shift+Z', () => ops.redo());
+    const undoBtn = iconButton('undo', 'Undo', `${MOD}Z`, () => ops.undo());
+    const redoBtn = iconButton('redo', 'Redo', IS_MAC ? `${SHIFT}${MOD}Z` : `${MOD}${SHIFT}Z`,
+      () => ops.redo());
     histGroup.append(undoBtn, redoBtn);
 
     /* finish */
@@ -139,7 +149,7 @@
     copyBtn.className = 'nc-btn nc-btn--primary';
     copyBtn.innerHTML = `${svg('copy')}<span class="nc-btn__label">Copy</span>`;
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
-    copyBtn.title = 'Copy (Ctrl+C)';
+    copyBtn.title = `Copy (${MOD}C)`;
     copyBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); actions.copy(); });
 
     const saveBtn = document.createElement('button');
@@ -147,7 +157,7 @@
     saveBtn.className = 'nc-btn';
     saveBtn.innerHTML = `${svg('save')}<span class="nc-btn__label">Save</span>`;
     saveBtn.setAttribute('aria-label', 'Save image');
-    saveBtn.title = 'Save (Ctrl+S)';
+    saveBtn.title = `Save (${MOD}S)`;
     saveBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); actions.save(); });
 
     doneGroup.append(copyBtn, saveBtn);

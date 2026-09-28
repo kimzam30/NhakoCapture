@@ -46,17 +46,48 @@
 
     const host = document.createElement('div');
     host.id = HOST_ID;
-    /* The host itself carries no styling beyond what the sheet gives :host, but
-     * it must survive a page that sets `div { display: none !important }` --
-     * hence the inline display, which beats any page rule short of the same
-     * !important on a more specific selector. */
-    host.style.setProperty('display', 'block', 'important');
+    /* The host's geometry is pinned INLINE, with !important, not left to
+     * :host in the shadow sheet.
+     *
+     * A page's own stylesheet beats a :host rule -- outer styles win that
+     * cascade -- so a site with `div { width: 50% }` or `div { transform:
+     * scale(.9) }` or `div { position: relative }` reached straight through
+     * and shrank, moved or un-fixed the overlay, leaving the frozen backdrop
+     * out of register with every coordinate measured against the viewport.
+     * Only an inline !important declaration outranks all of those. It also
+     * keeps the host alive on a page that says `div { display: none
+     * !important }`. */
+    const pin = (prop, value) => host.style.setProperty(prop, value, 'important');
+    pin('display', 'block');
+    pin('position', 'fixed');
+    pin('z-index', '2147483647');
+    pin('margin', '0');
+    pin('padding', '0');
+    pin('border', '0');
+    pin('transform', 'none');
+    pin('translate', 'none');
+    pin('scale', 'none');
+    pin('rotate', 'none');
+    pin('filter', 'none');
+    pin('clip-path', 'none');
+    pin('opacity', '1');
+    pin('visibility', 'visible');
+    pin('min-width', '0');
+    pin('min-height', '0');
+    pin('max-width', 'none');
+    pin('max-height', 'none');
+    pin('pointer-events', 'auto');
     if (box) {
-      host.style.inset = 'auto';
-      host.style.left = `${box.left}px`;
-      host.style.top = `${box.top}px`;
-      host.style.width = `${box.width}px`;
-      host.style.height = `${box.height}px`;
+      pin('left', `${box.left}px`);
+      pin('top', `${box.top}px`);
+      pin('right', 'auto');
+      pin('bottom', 'auto');
+      pin('width', `${box.width}px`);
+      pin('height', `${box.height}px`);
+    } else {
+      pin('inset', '0');
+      pin('width', 'auto');
+      pin('height', 'auto');
     }
 
     const shadow = host.attachShadow({ mode: 'open' });
@@ -65,7 +96,7 @@
     const root = el('div', 'nc-root', shadow);
     if (!clip) root.classList.add('is-unclipped');
     root.setAttribute('role', 'application');
-    root.setAttribute('aria-label', 'Nhako Capture — select an area to capture');
+    root.setAttribute('aria-label', 'NhakoCapture — drag over anything to capture it');
     root.tabIndex = -1;
 
     /* Reuse the Image already decoded during handoff rather than decoding the
@@ -135,8 +166,27 @@
       host.style.setProperty('display', hidden ? 'none' : 'block', 'important');
     }
 
+    /* The shutter flash: a white blink over the frame the moment a copy or
+     * save lands. Removed when it has played, so it can never linger over a
+     * capture the user keeps working on. */
+    function flash(rect) {
+      if (!rect || rect.w <= 0 || rect.h <= 0) return;
+      const f = el('div', 'nc-flash', layer);
+      Object.assign(f.style, {
+        left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.w}px`, height: `${rect.h}px`,
+      });
+      f.addEventListener('animationend', () => f.remove(), { once: true });
+      setTimeout(() => f.remove(), 800);   // animationend never fires if hidden
+    }
+
+    /* Fade the whole overlay out ahead of teardown. Purely visual: the caller
+     * still owns the timer that actually destroys it. */
+    function leave() {
+      root.classList.add('is-leaving');
+    }
+
     return {
-      host, shadow, root, layer, view, origin, setHole,
+      host, shadow, root, layer, view, origin, setHole, flash, leave,
       hide: () => setHidden(true),
       show: () => setHidden(false),
     };

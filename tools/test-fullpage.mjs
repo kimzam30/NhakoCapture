@@ -74,12 +74,15 @@ function load({
   elements = [],
   images = [],
   growsTo = null,              // lazy content: height after the sweep reaches the end
+  backgroundFor = 0,           // tile requests answered "another tab is active"
 } = {}) {
   const captures = [];
   let scrollY = 0;
   let hidden = false;
   let captureCount = 0;
   let height = docHeight;
+  let visibility = 'visible';
+  let backgroundReplies = 0;
 
   const rootStyle = makeStyle(
     `scroll-behavior: ${scrollBehavior}` + (locked ? '; overflow: hidden' : '')
@@ -92,6 +95,7 @@ function load({
       get body() { return { scrollHeight: height, offsetHeight: height }; },
       querySelectorAll: () => elements,
       get images() { return images; },
+      get visibilityState() { return visibility; },
     },
     getComputedStyle: (el) => ({ position: el.__position ?? 'static' }),
     get window() { return sandbox; },
@@ -114,6 +118,17 @@ function load({
       runtime: {
         sendMessage: async (msg) => {
           if (msg.type !== 'nc:capture-tile') return { ok: false };
+          if (backgroundReplies < backgroundFor) {
+            backgroundReplies += 1;
+            return { ok: false, hidden: true, error: 'the tab is in the background' };
+          }
+          /* What captureVisibleTab would really do with this tab hidden:
+           * photograph whatever tab IS showing. Recorded, so a test can see
+           * the loop never asked while it was away. */
+          if (visibility === 'hidden') {
+            captures.push({ scrollY, hidden, otherTab: true });
+            return { ok: true, dataUrl: 'tile@OTHER-TAB' };
+          }
           const index = captureCount++;
           if (index < quotaFor) {
             return { ok: false, quota: true,
@@ -148,6 +163,8 @@ function load({
     hide: () => { hidden = true; },
     show: () => { hidden = false; },
     setScroll: (y) => { scrollY = y; },
+    setVisibility: (v) => { visibility = v; },
+    backgroundReplies: () => backgroundReplies,
   };
 }
 
@@ -181,6 +198,43 @@ const run = (t, extra = {}) =>
   eq('one tile per stop', res.tiles.length, 3);
   ok('every capture happened with the overlay hidden',
      t.captures.length > 0 && t.captures.every((c) => c.hidden === true));
+}
+
+/* --- switching tabs pauses the capture, never photographs the other tab ---
+ * captureVisibleTab takes the window's ACTIVE tab. A whole-page capture that
+ * carried on while the user looked at another tab stitched that tab into this
+ * page's image. */
+{
+  const t = load({ docHeight: 2700, viewHeight: 900 });
+  t.setVisibility('hidden');
+  setTimeout(() => t.setVisibility('visible'), 400);
+  const res = await run(t);
+  ok('a capture started while hidden still succeeds', res.ok === true, JSON.stringify(res));
+  ok('...once the tab is back', res.tiles?.length === 3);
+  ok('...and never asked for a tile while the tab was hidden',
+     t.captures.every((c) => !c.otherTab), JSON.stringify(t.captures));
+}
+
+{
+  /* The switch lands between the visibility check and the capture; the worker
+     sees another tab active and says so. That is a wait, not a failure. */
+  const t = load({ docHeight: 2700, viewHeight: 900, backgroundFor: 2 });
+  const res = await run(t);
+  ok('a "tab is in the background" reply is waited out, not fatal', res.ok === true,
+     JSON.stringify(res));
+  eq('...every reply was consumed', t.backgroundReplies(), 2);
+  eq('...and no tile was lost to it', res.tiles.length, 3);
+}
+
+{
+  const t = load({ docHeight: 2700, viewHeight: 900 });
+  t.setVisibility('hidden');
+  let cancel = false;
+  setTimeout(() => { cancel = true; }, 300);
+  const res = await run(t, { shouldCancel: () => cancel });
+  ok('Esc still cancels while the loop waits for the tab', res.cancelled === true,
+     JSON.stringify(res));
+  eq('...and the page is put back', t.state().scrollY, 0);
 }
 
 /* --- tiles are placed where the page actually went ------------------------ */

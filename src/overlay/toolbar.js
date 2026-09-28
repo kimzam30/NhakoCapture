@@ -44,6 +44,17 @@
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   };
 
+  /* Drawn for 18px: the logo's butterfly with its outline dropped, which on
+   * dark glass would only thicken it. Pink over lavender, pale body. */
+  const BUTTERFLY =
+    '<svg viewBox="0 0 24 24">' +
+    '<path d="M11.4 11.2C10.9 8.4 8.8 5.6 6.2 5.8 3.8 6 3.6 9.2 5.6 11 7 12.2 9.4 12.4 11.4 12.2Z" fill="#ff91e7"/>' +
+    '<path d="M12.6 11.2C13.1 8.4 15.2 5.6 17.8 5.8 20.2 6 20.4 9.2 18.4 11 17 12.2 14.6 12.4 12.6 12.2Z" fill="#ff91e7"/>' +
+    '<path d="M11.4 13C9.2 13 7.2 14 7.1 15.8 7 17.5 8.7 18.3 10 17.5 11.1 16.8 11.4 15.2 11.4 13Z" fill="#c3a6f0"/>' +
+    '<path d="M12.6 13C14.8 13 16.8 14 16.9 15.8 17 17.5 15.3 18.3 14 17.5 12.9 16.8 12.6 15.2 12.6 13Z" fill="#c3a6f0"/>' +
+    '<rect x="11.25" y="8.6" width="1.5" height="9.4" rx=".75" fill="#f7f1f9"/>' +
+    '</svg>';
+
   function icon(name) {
     return `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`;
   }
@@ -102,13 +113,22 @@
 
     /* Restored when a disabled control loses focus, so the reason does not
      * outlive the moment it was relevant to. */
-    let baseHint = 'Drag to select an area';
+    let baseHint = 'Drag over anything to capture it';
 
     /* Created empty and always present, not inserted on demand. A live region
      * that arrives with its text already in it is unreliably announced; one
      * that is already in the tree and then changes is not. It also sits BEFORE
      * the hint, because it outranks it -- a notice about what the capture
      * actually IS is worth more than guidance on what to do with it. */
+    /* The family mark: the Nhako butterfly, small, at the head of the pill.
+     * Decorative -- the toolbar is already labelled -- and dropped in a narrow
+     * window, where every pixel belongs to a control. */
+    const mark = document.createElement('span');
+    mark.className = 'nc-mark';
+    mark.setAttribute('aria-hidden', 'true');
+    mark.innerHTML = BUTTERFLY;
+    pill.appendChild(mark);
+
     const notice = document.createElement('span');
     notice.className = 'nc-notice';
     notice.setAttribute('role', 'status');
@@ -128,7 +148,7 @@
 
     /* Announces without disturbing the hint the overlay is managing: passing
      * null puts back whatever was last set through setHint. */
-    const announce = (text) => { hint.textContent = text ?? baseHint; };
+    const announce = (text) => { hint.textContent = text ?? baseHint; delete hint.dataset.tone; };
 
     /* Ordered by extent, then export, then dismiss. `when` decides whether a
      * control exists at all -- a capability this surface can never have does
@@ -137,21 +157,24 @@
      * document; that one renders, and says why not. */
     const specs = [
       {
-        label: 'Capture visible page',
+        label: 'Visible area',
+        title: 'Capture everything on screen',
         iconName: 'visiblePage',
         when: () => typeof actions.captureVisiblePage === 'function',
         onClick: () => actions.captureVisiblePage(),
       },
       {
-        label: 'Capture full page',
+        label: 'Whole page',
+        title: 'Scroll and capture the whole page',
         iconName: 'fullPage',
         when: () => typeof actions.captureFullPage === 'function',
         enabled: () => actions.canCaptureFullPage?.() !== false,
-        reason: 'Whole page already visible',
+        reason: 'The whole page already fits on screen',
         onClick: () => actions.captureFullPage(),
       },
       {
-        label: 'Save page as PDF',
+        label: 'Save as PDF',
+        title: 'Save the whole page as a PDF',
         iconName: 'pdf',
         // Phase 5. Until the handler exists this button is simply absent.
         when: () => typeof actions.savePdf === 'function',
@@ -190,7 +213,14 @@
     layer.appendChild(pill);
 
     return {
-      setHint(text) { baseHint = text; hint.textContent = text; },
+      /* `tone` colours the moment: 'success' draws a tick before the text,
+       * 'error' warms it. Any plain hint afterwards clears it. */
+      setHint(text, tone) {
+        baseHint = text;
+        hint.textContent = text;
+        if (tone) hint.dataset.tone = tone;
+        else delete hint.dataset.tone;
+      },
       /* Separate from setHint on purpose. The hint is also the status channel
        * -- "Copying…", "Saved", the degraded-clipboard note -- so a notice put
        * there is erased by the first thing the user does, which for a
@@ -215,8 +245,12 @@
           x: rect.x + origin.x, y: rect.y + origin.y, w: rect.w, h: rect.h,
         };
         const overlaps = r && r.y < box.bottom && r.x < box.right && r.x + r.w > box.left;
-        pill.style.opacity = overlaps ? '0.25' : '';
-        pill.style.pointerEvents = overlaps ? 'none' : '';
+        /* Receded, not switched off. It used to drop to 0.25 with pointer
+         * events disabled, so after "Visible area" -- which frames the whole
+         * screen and therefore always overlaps -- Whole page, PDF and Cancel
+         * could not be clicked at all until the frame was cleared. Now the
+         * pill fades back and pointing at it brings it forward. */
+        pill.classList.toggle('is-receded', Boolean(overlaps));
       },
     };
   }

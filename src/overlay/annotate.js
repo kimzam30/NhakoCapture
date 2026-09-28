@@ -173,7 +173,12 @@
       const p = local(e);
       if (drawing.tool === 'pencil' || drawing.tool === 'highlight') {
         drawing.points.push(p);
-        ops.preview({ ...drawing, points: [...drawing.points] });
+        /* The points array is shared, not copied. Copying it on every sample
+         * made a long stroke quadratic -- a few thousand points meant millions
+         * of element copies on the one path that runs per pointermove. Sharing
+         * is safe: the preview is replaced on the next sample, and once the
+         * stroke is committed `drawing` is dropped and never touched again. */
+        ops.preview({ ...drawing });
       } else if (drawing.tool === 'arrow') {
         drawing.to = p;
         ops.preview({ ...drawing });

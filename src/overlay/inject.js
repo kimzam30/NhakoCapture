@@ -106,10 +106,21 @@
 
   let session = null;
 
+  /* The pill's standing guidance, in the words a person would use to explain
+   * it over your shoulder. */
+  const HINT_IDLE = 'Drag over anything to capture it';
+  const HINT_FRAMED = 'Mark it up, or drag the edges to adjust';
+
   function hintFor(mode) {
-    if (mode !== 'adjusting') return 'Drag to select an area';
-    return 'Annotate, or drag the edges to adjust';
+    return mode === 'adjusting' ? HINT_FRAMED : HINT_IDLE;
   }
+
+  /* How long the "done" moment stays on screen before the overlay goes, and
+   * how much of that is the fade. Long enough to read the tick and see the
+   * flash; short enough that nobody waits for it. */
+  const DONE_MS = 650;
+  const DEGRADED_DONE_MS = 1600;
+  const LEAVE_MS = 200;
 
   function decode(dataUrl) {
     return new Promise((resolve, reject) => {
@@ -356,11 +367,11 @@
       if (session?.finishing) return;
       const canvas = annotate.compose();
       if (!canvas) {
-        toolbar.setHint('Drag to select an area first');
+        toolbar.setHint('Drag over something first, then copy or save it');
         return;
       }
       session.finishing = true;
-      toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…');
+      toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…', 'busy');
 
       let res;
       try {
@@ -394,20 +405,30 @@
            * because the notice has to survive a 400px pill without pushing it
            * off screen. */
           toolbar.setNotice('Copied as HTML');
-          toolbar.setHint(res.note ?? 'Copied (as HTML)');
-          setTimeout(() => destroy(), 1600);
+          toolbar.setHint(res.note ?? 'Copied (as HTML)', 'success');
+          celebrate(DEGRADED_DONE_MS);
         } else {
-          toolbar.setHint(action === 'copy' ? 'Copied!' : 'Saved');
-          setTimeout(() => destroy(), 600);
+          toolbar.setHint(action === 'copy' ? 'Copied. Paste it anywhere' : 'Saved', 'success');
+          celebrate(DONE_MS);
         }
         return;
       }
 
       if (res?.cancelled) { toolbar.setHint(hintFor(selection.mode)); return; }
-      toolbar.setHint(action === 'copy' ? 'Copy failed' : 'Save failed');
+      toolbar.setHint(action === 'copy' ? 'Couldn’t copy that. Try again?'
+                                        : 'Couldn’t save that. Try again?', 'error');
       console.error('[NhakoCapture]', action, 'failed:', res?.error);
     }
     session.finish = finish;
+
+    /* The shutter flash over the frame, then a soft fade, then teardown. The
+     * timings only decorate the delay that was already there; the image is
+     * on the clipboard before any of this starts. */
+    function celebrate(total) {
+      stage.flash(selection.rect);
+      setTimeout(() => { if (session?.stage === stage) stage.leave(); }, total - LEAVE_MS);
+      setTimeout(() => { if (session?.stage === stage) destroy(); }, total);
+    }
 
     /* Full-page capture. The loop hides the overlay and drives the document,
      * geometry decides the composition, and stitch draws it. The editor handoff
@@ -426,8 +447,8 @@
        * reaches a screen reader, because the pill is about to be hidden and
        * this one is not. The badge that follows is browser chrome and is not
        * in the accessibility tree at all. */
-      toolbar.setHint('Capturing full page…');
-      announcer.say('Capturing full page. This may take a few seconds.');
+      toolbar.setHint('Scrolling through the page…');
+      announcer.say('Capturing the whole page. This takes a few seconds.');
 
       try {
         const result = await fullpageModule.run({
@@ -450,19 +471,19 @@
 
         if (result.cancelled) {
           toolbar.setHint(hintFor(selection.mode));
-          announcer.say('Full page capture cancelled. The page is unchanged.');
+          announcer.say('Stopped. The page is back the way it was.');
           return;
         }
         if (!result.ok) {
-          toolbar.setHint('Full page failed');
-          announcer.say('Full page capture failed.');
+          toolbar.setHint('Couldn’t capture the whole page', 'error');
+          announcer.say('The whole-page capture did not work.');
           console.error('[NhakoCapture] full page failed:', result.error);
           return;
         }
 
         const captureMs = Date.now() - startedAt;
 
-        toolbar.setHint('Stitching…');
+        toolbar.setHint('Putting it together…');
         let canvas;
         try {
           canvas = await stitchModule.stitch(result.tiles, {
@@ -471,7 +492,7 @@
           });
         } catch (err) {
           if (!session) return;
-          toolbar.setHint('Full page failed');
+          toolbar.setHint('Couldn’t capture the whole page', 'error');
           console.error('[NhakoCapture] stitch failed:', err);
           return;
         }
@@ -507,8 +528,8 @@
 
         if (!handoff?.ok) {
           if (!session) return;
-          toolbar.setHint('Full page failed');
-          announcer.say('Full page capture failed.');
+          toolbar.setHint('Couldn’t capture the whole page', 'error');
+          announcer.say('The whole-page capture did not work.');
           console.error('[NhakoCapture] handoff failed:', handoff?.error);
           return;
         }
@@ -516,8 +537,8 @@
         /* The other endpoint. Said before teardown, and from an element that
          * outlives the overlay by design. */
         announcer.say(
-          `Full page captured, ${canvas.width} by ${canvas.height} pixels` +
-          `${result.capped ? ', capped' : ''}. Opening the editor window.`
+          `Got the whole page, ${canvas.width} by ${canvas.height} pixels` +
+          `${result.capped ? ', cut off at the size limit' : ''}. Opening it in a new window.`
         );
 
         /* The editor window owns the capture now. Leaving the overlay up would

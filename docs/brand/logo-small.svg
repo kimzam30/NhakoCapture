@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="NhakoCapture">
+  <!-- The 16px and 32px toolbar mark. Same tile, same frame, same butterfly,
+       with everything that turns to noise below 48px taken out: no tape, no
+       glint, no wing spots, no antennae. The frame is heavier and the
+       butterfly bigger, because at 16px a stroke is either a whole pixel or
+       it is grey mush. -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FFE1F1"/>
+      <stop offset=".55" stop-color="#F6D3F4"/>
+      <stop offset="1" stop-color="#DCCBFB"/>
+    </linearGradient>
+    <clipPath id="squircle">
+      <path d="M324 0H700C940 0 1024 84 1024 324V700C1024 940 940 1024 700 1024H324C84 1024 0 940 0 700V324C0 84 84 0 324 0Z"/>
+    </clipPath>
+  </defs>
+  <g clip-path="url(#squircle)">
+    <rect width="1024" height="1024" fill="url(#tile)"/>
+  </g>
+  <g fill="none" stroke="#4A1942" stroke-width="104" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M164 380V250a86 86 0 0 1 86-86h130"/>
+    <path d="M644 164h130a86 86 0 0 1 86 86v130"/>
+    <path d="M860 644v130a86 86 0 0 1-86 86H644"/>
+    <path d="M380 860H250a86 86 0 0 1-86-86V644"/>
+  </g>
+  <g transform="translate(512 520) scale(1.08) translate(-512 -520)">
+    <g id="half" stroke="#4A1942" stroke-width="44" stroke-linejoin="round">
+      <path d="M530 522C556 432 630 350 694 356C756 362 760 444 712 494C674 534 602 544 532 540Z" fill="#F46FB4"/>
+      <path d="M530 552C598 552 656 580 660 628C664 676 616 700 580 680C546 660 530 612 530 552Z" fill="#A184EE"/>
+    </g>
+    <use href="#half" transform="translate(1024 0) scale(-1 1)"/>
+    <rect x="486" y="430" width="52" height="252" rx="26" fill="#4A1942"/>
+  </g>
+</svg>

@@ -117,7 +117,7 @@ async function copyImage(dataUrl) {
         ok: true,
         via: await writeViaCopyEvent(dataUrl),
         degraded: true,
-        note: 'Pasted as HTML — works in chat and documents, not image editors.',
+        note: 'Copied. It pastes into chats and docs, but not into image editors',
         apiError: String(apiErr),
       };
     } catch (evtErr) {

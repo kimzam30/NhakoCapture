@@ -170,8 +170,8 @@
         stage.root.dataset.mode = mode;
         toolbar.avoid(rect);
         toolbar.setHint(mode === 'adjusting'
-          ? 'Annotate, or drag the edges to adjust'
-          : 'Drag to select an area');
+          ? 'Mark it up, or drag the edges to adjust'
+          : 'Drag over anything to capture it');
         annotate.paint();
         rail.position(mode === 'adjusting' ? rect : null, toolbar.bottom() - stage.origin.y);
         rail.sync();
@@ -254,7 +254,7 @@
     if (capped) {
       requestAnimationFrame(() => {
         toolbar.setNotice(
-          `Full page capped at ${bitmap.naturalHeight}px — page is longer`
+          `Cut off at ${bitmap.naturalHeight}px — the page keeps going`
         );
       });
     }
@@ -312,11 +312,11 @@
       if (finishing) return;
       const canvas = annotate.compose();
       if (!canvas) {
-        toolbar.setHint('Drag to select an area first');
+        toolbar.setHint('Drag over something first, then copy or save it');
         return;
       }
       finishing = true;
-      toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…');
+      toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…', 'busy');
 
       let res;
       try {
@@ -342,12 +342,18 @@
          * hint, and this window closes 1.6s later. */
         if (res.degraded) toolbar.setNotice('Copied as HTML');
         toolbar.setHint(res.degraded ? (res.note ?? 'Copied (as HTML)')
-                                     : (action === 'copy' ? 'Copied!' : 'Saved'));
-        setTimeout(() => window.close(), res.degraded ? 1600 : 600);
+                                     : (action === 'copy' ? 'Copied. Paste it anywhere' : 'Saved'),
+                        'success');
+        /* The same shutter flash and fade the page overlay gives. */
+        stage.flash(selection.rect);
+        const total = res.degraded ? 1600 : 650;
+        setTimeout(() => stage.leave(), total - 200);
+        setTimeout(() => window.close(), total);
         return;
       }
-      if (res?.cancelled) { toolbar.setHint('Drag to select an area'); return; }
-      toolbar.setHint(action === 'copy' ? 'Copy failed' : 'Save failed');
+      if (res?.cancelled) { toolbar.setHint('Mark it up, or drag the edges to adjust'); return; }
+      toolbar.setHint(action === 'copy' ? 'Couldn’t copy that. Try again?'
+                                        : 'Couldn’t save that. Try again?', 'error');
       console.error('[NhakoCapture]', action, 'failed:', res?.error);
     }
 

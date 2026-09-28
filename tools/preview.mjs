@@ -73,7 +73,7 @@ const PAGE = `data:text/html;charset=utf-8,${encodeURIComponent(`
 <footer>© Meridian — a fictional site used to preview a screenshot tool.</footer>
 `)}`;
 
-/* The same site, made taller than the viewport. `Capture full page` is
+/* The same site, made taller than the viewport. `Whole page` is
  * disabled on the short fixture above -- correctly, there is nothing below the
  * fold -- so the enabled path needs a page that actually has one. */
 const TALL_PAGE = PAGE + encodeURIComponent(
@@ -271,7 +271,7 @@ async function main() {
     check('stylesheet adopted', mounted.sheets === 1);
     check('four scrim rects', mounted.scrims === 4, `got ${mounted.scrims}`);
     check('command pill rendered', mounted.pill);
-    check('the pill offers Save page as PDF',
+    check('the pill offers Save as PDF',
       await cdp.eval(`[...document.getElementById('nhako-capture-host').shadowRoot.querySelectorAll('.nc-btn')].some(b => /PDF/.test(b.textContent))`));
     await shoot(cdp, '01-idle');
 
@@ -320,6 +320,31 @@ async function main() {
     check('three launches leave exactly one host', await hostCount(cdp) === 1,
       `got ${await hostCount(cdp)}`);
 
+    /* --- a hostile page stylesheet cannot reach the host ----------------- */
+    /* A page's own rules beat :host, so these used to shrink, scale or
+       un-fix the overlay and pull the backdrop out of register. The host now
+       pins its geometry inline with !important. */
+    {
+      await cdp.eval(`(() => { const s = document.createElement('style'); s.id = '__hostile';
+        s.textContent = 'div { width: 40%; height: 30%; transform: scale(.5); position: relative; margin: 50px; padding: 30px; opacity: .2 }';
+        document.head.appendChild(s); })()`);
+      await mountOverlay(cdp);
+      const geo = JSON.parse(await cdp.eval(`(() => {
+        const h = document.getElementById('nhako-capture-host');
+        const b = h.getBoundingClientRect(), cs = getComputedStyle(h);
+        return JSON.stringify({ x: b.x, y: b.y, w: b.width, h: b.height,
+          position: cs.position, transform: cs.transform, opacity: cs.opacity,
+          vw: innerWidth, vh: innerHeight });
+      })()`));
+      check('page CSS cannot resize the overlay host',
+        geo.x === 0 && geo.y === 0 && geo.w === geo.vw && geo.h === geo.vh, JSON.stringify(geo));
+      check('...nor transform, fade or un-fix it',
+        geo.position === 'fixed' && geo.transform === 'none' && geo.opacity === '1',
+        JSON.stringify(geo));
+      await cdp.eval(`document.getElementById('__hostile').remove()`);
+      await mountOverlay(cdp);
+    }
+
     /* --- the pill's two capture extents ---------------------------------- */
     /* Scoped to the pill. The tool rail's Copy and Save share the .nc-btn
        class, so an unscoped query reaches them first -- and the rail is hidden
@@ -329,11 +354,11 @@ async function main() {
       `JSON.stringify([...document.getElementById('nhako-capture-host').shadowRoot
         .querySelectorAll('.nc-pill .nc-btn')].map(b => b.getAttribute('aria-label')))`));
     check('the pill names the visible extent honestly',
-      labels.includes('Capture visible page'), JSON.stringify(labels));
+      labels.includes('Visible area'), JSON.stringify(labels));
     check('and offers the full extent beside it',
-      labels.includes('Capture full page'), JSON.stringify(labels));
+      labels.includes('Whole page'), JSON.stringify(labels));
     check('ordered by extent, visible before full',
-      labels.indexOf('Capture visible page') < labels.indexOf('Capture full page'),
+      labels.indexOf('Visible area') < labels.indexOf('Whole page'),
       JSON.stringify(labels));
 
     /* This fixture is shorter than the viewport, so full page has nothing to
@@ -341,7 +366,7 @@ async function main() {
     const disabled = JSON.parse(await cdp.eval(
       `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
         const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
-          .find(x => x.getAttribute('aria-label') === 'Capture full page');
+          .find(x => x.getAttribute('aria-label') === 'Whole page');
         b.focus();
         return JSON.stringify({
           ariaDisabled: b.getAttribute('aria-disabled'),
@@ -357,10 +382,10 @@ async function main() {
     check('...via aria-disabled, not the attribute that removes it from tab order',
       disabled.hasDisabledAttr === false);
     check('...so a keyboard user can still reach it', disabled.focusable === true);
-    check('...and hears why', disabled.hintOnFocus === 'Whole page already visible',
+    check('...and hears why', disabled.hintOnFocus === 'The whole page already fits on screen',
       disabled.hintOnFocus);
     check('...greyed by colour, not opacity',
-      disabled.opacity === '1' && disabled.colour === 'rgb(154, 154, 154)',
+      disabled.opacity === '1' && disabled.colour === 'rgb(180, 170, 185)',
       JSON.stringify(disabled));
 
     const afterBlur = await cdp.eval(
@@ -368,15 +393,30 @@ async function main() {
         sr.querySelector('.nc-pill .nc-btn').focus();
         return sr.querySelector('.nc-hint').textContent; })()`);
     check('the reason does not outlive the focus that raised it',
-      afterBlur === 'Drag to select an area', afterBlur);
+      afterBlur === 'Drag over anything to capture it', afterBlur);
 
     /* --- capture visible page -------------------------------------------- */
     await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
-      [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
+      [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible area/i.test(b.textContent)).click(); })()`);
     await sleep(200);
     const full = JSON.parse(await rectOf(cdp));
     check('capture visible page selects the whole viewport',
       full && full.x === 0 && full.y === 0 && full.w === W, JSON.stringify(full));
+    /* The frame now covers the pill. It used to go to 0.25 with pointer
+       events off, so Whole page, PDF and Cancel could not be clicked at all. */
+    {
+      const pill = JSON.parse(await shadowEval(cdp, `
+        const p = sr.querySelector('.nc-pill'), b = p.getBoundingClientRect();
+        return JSON.stringify({ receded: p.classList.contains('is-receded'),
+          pe: getComputedStyle(p).pointerEvents, cx: b.x + b.width - 20, cy: b.y + b.height / 2 });`));
+      check('over the frame the pill recedes', pill.receded === true, JSON.stringify(pill));
+      check('...but stays clickable', pill.pe === 'auto', JSON.stringify(pill));
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: Math.round(pill.cx), y: Math.round(pill.cy) });
+      await sleep(320);
+      const hovered = await shadowEval(cdp, `return getComputedStyle(sr.querySelector('.nc-pill')).opacity;`);
+      check('...and pointing at it brings it forward', hovered === '1', hovered);
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 500 });
+    }
     await shoot(cdp, '03-visible-page');
 
 
@@ -389,7 +429,7 @@ async function main() {
       const state = JSON.parse(await cdp.eval(
         `(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
           const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
-            .find(x => x.getAttribute('aria-label') === 'Capture full page');
+            .find(x => x.getAttribute('aria-label') === 'Whole page');
           b.focus();
           return JSON.stringify({
             ariaDisabled: b.getAttribute('aria-disabled'),
@@ -404,16 +444,16 @@ async function main() {
       check('full page is enabled where there IS something below the fold',
         state.ariaDisabled === null, JSON.stringify(state));
       check('...and carries the live text colour, not the disabled one',
-        state.colour !== 'rgb(154, 154, 154)', state.colour);
+        state.colour !== 'rgb(180, 170, 185)', state.colour);
       check('...and announces no reason, because there is none',
-        state.hint === 'Drag to select an area', state.hint);
+        state.hint === 'Drag over anything to capture it', state.hint);
 
       // Back to the short fixture for the rest of the run.
       await cdp.send('Page.navigate', { url: PAGE });
       await sleep(300);
       await mountOverlay(cdp);
       await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
-        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
+        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible area/i.test(b.textContent)).click(); })()`);
       await sleep(200);
     }
 
@@ -512,7 +552,7 @@ async function main() {
       await sleep(300);
       await mountOverlay(cdp);
       await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
-        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible page/i.test(b.textContent)).click(); })()`);
+        [...sr.querySelectorAll('.nc-pill .nc-btn')].find(b => /visible area/i.test(b.textContent)).click(); })()`);
       await sleep(200);
     }
 
@@ -536,9 +576,9 @@ async function main() {
     check('exactly one stroke weight reads as selected',
       (await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-weight')].filter(b => b.classList.contains('is-active')).length;`)) === 1);
 
-    await pickTool(cdp, 'Pencil');
+    await pickTool(cdp, 'Pen');
     check('pencil shows as active',
-      await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-tool')].some(b => b.classList.contains('is-active') && b.getAttribute('aria-label') === 'Pencil');`));
+      await shadowEval(cdp, `return [...sr.querySelectorAll('.nc-tool')].some(b => b.classList.contains('is-active') && b.getAttribute('aria-label') === 'Pen');`));
 
     const beforeStroke = await opCount(cdp);
     await drag(cdp, [360, 300], [700, 460]);
@@ -558,7 +598,7 @@ async function main() {
     await pickTool(cdp, 'Arrow');
     await drag(cdp, [420, 520], [640, 380]);
     await sleep(150);
-    await pickTool(cdp, 'Highlight');
+    await pickTool(cdp, 'Highlighter');
     await drag(cdp, [300, 250], [560, 250]);
     await sleep(150);
     check('four ops recorded', await opCount(cdp) === 3, String(await opCount(cdp)));
@@ -665,7 +705,7 @@ async function main() {
     check('carrying a PNG data URL', sent[0]?.head === 'data:image/png;base64,', sent[0]?.head);
     check('with the annotated image in it', sent[0]?.len > 5000, String(sent[0]?.len));
     check('and the overlay confirms', 
-      (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied!',
+      (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied. Paste it anywhere',
       await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`));
 
     /* a degraded clipboard result must say so rather than claim a clean copy */
@@ -741,7 +781,7 @@ async function main() {
     await shadowEval(cdp, `sr.querySelector('.nc-btn--primary').click();`);
     await sleep(400);
     check('a failed copy leaves the overlay up', await hostCount(cdp) === 1);
-    check('and says so', /failed/i.test(await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)));
+    check('and says so', /couldn’t|failed/i.test(await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)));
     await cdp.eval(`globalThis.__reply = { ok: true };`);
 
     /* --- restore a working frame for the remaining checks ----------------- */
@@ -772,7 +812,7 @@ async function main() {
     await sleep(200);
 
     /* zoom loupe */
-    await pickTool(cdp, 'Zoom');
+    await pickTool(cdp, 'Magnifier');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 600, y: 380 });
     await sleep(200);
     check('zoom shows a loupe',
@@ -863,7 +903,7 @@ async function main() {
       }
       check('audit: clicking to place a second label commits the first',
         (await opCount(cdp)) === 2, String(await opCount(cdp)));
-      await pickTool(cdp, 'Pencil');
+      await pickTool(cdp, 'Pen');
       check('audit: switching tools commits the label in progress',
         (await opCount(cdp)) === 3, String(await opCount(cdp)));
       await key(cdp, 'Escape');
@@ -912,9 +952,9 @@ async function main() {
             return b && b.querySelector('svg').innerHTML;
           };
           return JSON.stringify({
-            visible: of('Capture visible page'),
-            full: of('Capture full page'),
-            pdf: of('Save page as PDF'),
+            visible: of('Visible area'),
+            full: of('Whole page'),
+            pdf: of('Save as PDF'),
             names: btns.map(b => b.getAttribute('aria-label')),
             labelShown: getComputedStyle(btns[0].querySelector('.nc-btn__label')).display,
             overflows: pill.scrollWidth > innerWidth,
@@ -1002,9 +1042,9 @@ async function main() {
       check('the overlay really is hidden during a capture',
         during.hostHidden === true, JSON.stringify(during));
       check('the start of a capture is announced from outside it',
-        /Capturing full page/.test(during.announced), JSON.stringify(during));
+        /Capturing the whole page/.test(during.announced), JSON.stringify(during));
       check('...which the pill hint could not have done from inside a hidden host',
-        during.hintInShadow === 'Capturing full page…', during.hintInShadow);
+        during.hintInShadow === 'Scrolling through the page…', during.hintInShadow);
 
       /* Endpoint 2: arrival. */
       await cdp.eval(`globalThis.__capture.catch(() => {}).then(() => 'settled')`);
@@ -1015,7 +1055,7 @@ async function main() {
         return el ? el.textContent : '(announcer gone)';
       })()`);
       check('the end of a capture is announced too',
-        /captured|failed|cancelled/i.test(ended), ended);
+        /got the whole page|did not work|stopped/i.test(ended), ended);
 
       await cdp.eval(`globalThis.__reply = { ok: true };`);
       await cdp.send('Page.navigate', { url: PAGE });
@@ -1032,7 +1072,7 @@ async function main() {
       const a11y = JSON.parse(await cdp.eval(`(() => {
         const sr = document.getElementById('nhako-capture-host').shadowRoot;
         const b = [...sr.querySelectorAll('.nc-pill .nc-btn')]
-          .find(x => x.getAttribute('aria-label') === 'Capture full page');
+          .find(x => x.getAttribute('aria-label') === 'Whole page');
         b.focus();
         const cs = getComputedStyle(b);
 
@@ -1159,7 +1199,7 @@ async function main() {
       /* Now the same width carrying the widest thing the pill can hold. */
       await shadowEval(cdp, `
         NhakoCapture.modules.overlay.session.toolbar.setNotice(
-          'Full page capped at 16384px — page is longer');
+          'Cut off at 16384px — the page keeps going');
         return 1;`);
       await sleep(80);
       const withNotice = JSON.parse(await shadowEval(cdp, measure));
@@ -1180,7 +1220,7 @@ async function main() {
         ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
         return JSON.stringify({
           shown: Math.round(n.getBoundingClientRect().width),
-          needed: Math.ceil(ctx.measureText('Full page capped').width),
+          needed: Math.ceil(ctx.measureText('Cut off at').width),
           natural: n.scrollWidth,
           truncated: n.scrollWidth > n.clientWidth + 1,
         });`));
@@ -1407,12 +1447,12 @@ async function main() {
       check('the capture is letterboxed inside the window',
         mounted.box && mounted.box.w > 0 && mounted.box.h > 0 &&
         mounted.box.l >= 0 && mounted.box.t >= 0, JSON.stringify(mounted.box));
-      check('no "Capture visible page" here — the capture IS the frame',
-        !mounted.pillButtons.includes('Capture visible page'), JSON.stringify(mounted.pillButtons));
-      check('no "Capture full page" here — there is no live tab to scroll',
-        !mounted.pillButtons.includes('Capture full page'), JSON.stringify(mounted.pillButtons));
-      check('no "Save page as PDF" here — there is no live tab to print',
-        !mounted.pillButtons.includes('Save page as PDF'));
+      check('no "Visible area" here — the capture IS the frame',
+        !mounted.pillButtons.includes('Visible area'), JSON.stringify(mounted.pillButtons));
+      check('no "Whole page" here — there is no live tab to scroll',
+        !mounted.pillButtons.includes('Whole page'), JSON.stringify(mounted.pillButtons));
+      check('no "Save as PDF" here — there is no live tab to print',
+        !mounted.pillButtons.includes('Save as PDF'));
 
       /* T11, the other half: a capture that was NOT capped must say nothing.
          A notice that appears either way is decoration, not information. */
@@ -1483,7 +1523,7 @@ async function main() {
         check('editor: a real PNG is written directly when the page can',
           direct.writes === 1 && !direct.sent.includes('nc:copy'), JSON.stringify(direct));
         check('editor: ...and reported as a clean copy',
-          (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied!');
+          (await shadowEval(cdp, `return sr.querySelector('.nc-hint').textContent;`)) === 'Copied. Paste it anywhere');
         await cdp.eval(`globalThis.__directCopy = false;`);
       }
 
@@ -1505,13 +1545,13 @@ async function main() {
         };
 
         const clean = await outcome({ ok: true });
-        check('editor: a clean copy says so', clean.hint === 'Copied!', clean.hint);
+        check('editor: a clean copy says so', clean.hint === 'Copied. Paste it anywhere', clean.hint);
         check('editor: ...and raises no notice', clean.noticeHidden === true,
           JSON.stringify(clean));
 
         const degraded = await outcome({ ok: true, degraded: true, note: 'Pasted as HTML' });
         check('editor: a degraded copy does not claim a clean one',
-          degraded.hint !== 'Copied!', degraded.hint);
+          degraded.hint !== 'Copied. Paste it anywhere', degraded.hint);
         /* The notice, not the hint -- for symmetry with the overlay rather than
            for the narrow-window reason: this window has a 720px minimum, so it
            never reaches the collapse. Two surfaces reporting one outcome two
@@ -1522,7 +1562,7 @@ async function main() {
 
         const failed = await outcome({ ok: false, error: 'clipboard unavailable' });
         check('editor: a refusal is reported as a failure',
-          /failed/i.test(failed.hint), failed.hint);
+          /couldn’t|failed/i.test(failed.hint), failed.hint);
         check('editor: ...and the window is still there to retry from',
           (await cdp.eval(`String(!!document.getElementById('nhako-capture-host'))`)) === 'true');
 
@@ -1563,13 +1603,13 @@ async function main() {
         check('a capped capture says so, in the pill', capped.hidden === false,
           JSON.stringify(capped));
         check('...naming a height rather than a vague warning',
-          /^Full page capped at \d+px — page is longer$/.test(capped.text || ''),
+          /^Cut off at \d+px — the page keeps going$/.test(capped.text || ''),
           capped.text);
         check("...and the height quoted is this image's own",
           typeof capped.imageHeight === 'number' && capped.imageHeight > 0 &&
           capped.text.includes(String(capped.imageHeight)), JSON.stringify(capped));
         check('...in the notice colour, not the hint grey',
-          capped.colour === 'rgb(255, 204, 0)', capped.colour);
+          capped.colour === 'rgb(255, 209, 102)', capped.colour);
         check('...announced politely rather than interrupting',
           capped.live === 'polite', capped.live);
         check('...and read before the hint, per the content hierarchy',
@@ -1585,7 +1625,7 @@ async function main() {
           return JSON.stringify({ hidden: n.hidden, text: n.textContent });
         })()`));
         check('the notice outlives a status message that would erase a hint',
-          survived.hidden === false && /capped/.test(survived.text),
+          survived.hidden === false && /Cut off/.test(survived.text),
           JSON.stringify(survived));
 
         await cdp.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: id2 });
@@ -1728,8 +1768,8 @@ async function main() {
       await drag(cdp, [56, 128], [1224, 516]);
       await sleep(200);
 
-      await pickTool(cdp, 'Highlight');
-      await drag(cdp, [33, 176], [680, 176]);
+      await pickTool(cdp, 'Highlighter');
+      await drag(cdp, [70, 178], [680, 178]);
       await sleep(120);
       await pickTool(cdp, 'Arrow');
       await drag(cdp, [980, 400], [1140, 300]);
@@ -1745,7 +1785,7 @@ async function main() {
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 });
       await sleep(300);
-      await pickTool(cdp, 'Pencil');
+      await pickTool(cdp, 'Pen');
 
       mkdirSync(join(ROOT, 'docs'), { recursive: true });
       const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });

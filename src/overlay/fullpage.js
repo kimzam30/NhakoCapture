@@ -242,18 +242,49 @@
     constructor() { super('full-page capture cancelled'); this.cancelled = true; }
   }
 
+  /* Switching tabs mid-capture PAUSES it. captureVisibleTab photographs the
+   * window's active tab, so a tile taken while the user is looking at another
+   * tab is a picture of that tab -- which used to be stitched straight into
+   * this page's image. Waiting is the right answer: the page is still exactly
+   * where the loop left it, and it resumes the moment the user comes back.
+   * Esc still cancels, and a user who never returns does not pin the page
+   * forever. `=== 'hidden'`, not `!== 'visible'`: a stub or an old engine
+   * without the property must never be read as permanently hidden. */
+  const HIDDEN_POLL = 250;
+  const HIDDEN_GIVE_UP = 120000;
+
+  async function whileHidden(shouldCancel) {
+    const deadline = Date.now() + HIDDEN_GIVE_UP;
+    while (document.visibilityState === 'hidden') {
+      if (shouldCancel?.()) throw new Cancelled();
+      if (Date.now() > deadline) throw new Error('the tab stayed in the background');
+      await sleep(HIDDEN_POLL);
+    }
+  }
+
   /* One tile, paced and retried. Returns a dataUrl or throws. */
-  async function captureTile(lastCaptureAt, minInterval, quotaBackoff) {
+  async function captureTile(lastCaptureAt, minInterval, quotaBackoff, shouldCancel) {
     const since = Date.now() - lastCaptureAt;
     if (since < minInterval) await sleep(minInterval - since);
 
-    for (let attempt = 0; attempt <= QUOTA_RETRIES; attempt += 1) {
+    const deadline = Date.now() + HIDDEN_GIVE_UP;
+    for (let attempt = 0; attempt <= QUOTA_RETRIES;) {
+      await whileHidden(shouldCancel);
       const res = await chrome.runtime.sendMessage({ type: 'nc:capture-tile' });
       if (res?.ok && res.dataUrl) return res.dataUrl;
+      /* The worker saw another tab active -- the user switched between the
+       * visibility check above and the capture. Not a failure; wait. */
+      if (res?.hidden) {
+        if (shouldCancel?.()) throw new Cancelled();
+        if (Date.now() > deadline) throw new Error('the tab stayed in the background');
+        await sleep(HIDDEN_POLL);
+        continue;
+      }
       if (!isQuota(res)) {
         throw new Error(res?.error || 'the browser refused to capture this tab');
       }
       await sleep(quotaBackoff * (attempt + 1));
+      attempt += 1;
     }
     throw new Error('the browser kept refusing to capture — rate limit');
   }
@@ -324,7 +355,7 @@
         if (shouldCancel?.()) throw new Cancelled();
 
         onProgress?.(i + 1, stops.length);
-        const dataUrl = await captureTile(lastCaptureAt, minInterval, quotaBackoff);
+        const dataUrl = await captureTile(lastCaptureAt, minInterval, quotaBackoff, shouldCancel);
         lastCaptureAt = Date.now();
 
         /* Placed where the page actually went. If two stops land on the same

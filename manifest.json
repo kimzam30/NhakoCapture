@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "NhakoCapture",
-  "version": "2.0.0",
-  "description": "Snapshot tool. Freeze the page, frame a region, annotate, then copy or save.",
+  "version": "2.1.0",
+  "description": "Screenshots without leaving the tab. Freeze the page, drag a box, mark it up, then copy or save.",
+  "minimum_chrome_version": "116",
   "permissions": [
     "activeTab",
     "storage",
@@ -15,7 +16,7 @@
     "service_worker": "src/background.js"
   },
   "action": {
-    "default_title": "Nhako Capture (Ctrl+Shift+5)",
+    "default_title": "NhakoCapture",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -35,7 +36,7 @@
         "default": "Ctrl+Shift+5",
         "mac": "Command+Shift+2"
       },
-      "description": "Open Nhako Capture"
+      "description": "Take a screenshot"
     }
   }
 }

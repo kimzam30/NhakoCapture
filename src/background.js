@@ -76,16 +76,37 @@ function isRestricted(url) {
  * A comment would not have held this. A red test does.
  *
  * Text colour is set EXPLICITLY in both states. Chrome defaults badge text to
- * white, and white on this red is 3.41:1 -- under the 4.5:1 floor, and wrong
- * for as long as this badge has existed. Dark text on it is 6.16:1. */
+ * white: white on the brand pink is 2.0:1 and on the red 3.41:1, both under
+ * the 4.5:1 floor. Plum on the pink is 8.75:1; near-black on the red 4.99:1. */
 const BADGE = {
-  progress:     '#8a2be2',  // --nc-badge-progress      (via --nc-accent)
-  progressText: '#ffffff',  // --nc-badge-progress-text
+  progress:     '#ff91e7',  // --nc-badge-progress      (via --nc-accent, --nc-pink)
+  progressText: '#2a0f26',  // --nc-badge-progress-text
   error:        '#ff453a',  // --nc-badge-error         (via --nc-error)
   errorText:    '#1c1c1e',  // --nc-badge-error-text
 };
 
-const IDLE_TITLE = 'Nhako Capture (Ctrl+Shift+5)';
+/* The tooltip at rest. It names the shortcut the browser ACTUALLY has on
+ * record rather than the one the manifest suggested: the suggestion is only a
+ * suggestion (it is ⌘⇧2 on a Mac, since macOS owns ⌘⇧5), it is silently
+ * dropped when another extension already holds the keys, and people rebind it.
+ * A tooltip promising Ctrl+Shift+5 to a Mac user was simply wrong. */
+const NAME = 'NhakoCapture';
+let idleTitle = NAME;
+
+async function refreshIdleTitle() {
+  if (!chrome.commands?.getAll) return;
+  try {
+    const commands = await chrome.commands.getAll();
+    const shortcut = commands.find((c) => c.name === '_execute_action')?.shortcut;
+    idleTitle = shortcut ? `${NAME} (${shortcut})` : NAME;
+    await chrome.action.setTitle({ title: idleTitle });
+  } catch {
+    /* Keep the plain name. A tooltip is not worth failing startup over. */
+  }
+}
+refreshIdleTitle();
+chrome.commands?.onChanged?.addListener?.(refreshIdleTitle);
+
 const FAILURE_BADGE_MS = 5000;
 
 /* A tab showing a failure is not overwritten by progress, and clearing
@@ -124,13 +145,13 @@ async function showProgress(tabId, index, total) {
     text: progressLabel(index, total),
     color: BADGE.progress,
     textColor: BADGE.progressText,
-    title: `Nhako Capture — capturing full page, ${index} of ${total}`,
+    title: `${NAME} — capturing the whole page, ${index} of ${total}`,
   });
 }
 
 async function clearProgress(tabId) {
   if (failingTabs.has(tabId)) return;
-  await paintBadge(tabId, { text: '', title: IDLE_TITLE });
+  await paintBadge(tabId, { text: '', title: idleTitle });
 }
 
 /* A tab that navigates or closes takes its content script with it, so nothing
@@ -150,7 +171,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.status !== 'loading') return;
   failingTabs.delete(tabId);
   chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
-  chrome.action.setTitle({ tabId, title: IDLE_TITLE }).catch(() => {});
+  chrome.action.setTitle({ tabId, title: idleTitle }).catch(() => {});
 });
 
 /* --- user-visible failure ------------------------------------------------ */
@@ -165,12 +186,12 @@ async function reportFailure(tabId, short, detail) {
     text: '!',
     color: BADGE.error,
     textColor: BADGE.errorText,
-    title: `Nhako Capture — ${short}${detail ? `\n${detail}` : ''}`,
+    title: `${NAME} — ${short}${detail ? `\n${detail}` : ''}`,
   });
   setTimeout(() => {
     failingTabs.delete(tabId);
     chrome.action.setBadgeText({ tabId, text: '' }).catch(() => {});
-    chrome.action.setTitle({ tabId, title: IDLE_TITLE }).catch(() => {});
+    chrome.action.setTitle({ tabId, title: idleTitle }).catch(() => {});
   }, FAILURE_BADGE_MS);
 }
 
@@ -184,9 +205,24 @@ async function captureViewport(windowId) {
  * the overlay's loop needs to tell a rate-limit rejection (wait and retry)
  * apart from a refusal (stop), and an exception across the message boundary
  * arrives as an opaque string that cannot be told apart from either. */
-async function captureTile(windowId) {
+async function captureTile(windowId, tabId) {
   if (windowId === undefined || windowId === null) {
     return { ok: false, error: 'no window to capture' };
+  }
+  /* captureVisibleTab photographs whichever tab is ACTIVE in the window, not
+   * the tab that asked. A whole-page capture takes several seconds, and a user
+   * who switched tabs in the middle of one got the other tab's pixels stitched
+   * into their page, with nothing to say so. Refused here, and reported as
+   * `hidden` so the loop waits for them to come back instead of failing.
+   *
+   * tabs.query needs no permission for the two fields read here. */
+  if (tabId !== undefined && tabId !== null && chrome.tabs.query) {
+    try {
+      const [active] = await chrome.tabs.query({ active: true, windowId });
+      if (active && active.id !== tabId) {
+        return { ok: false, hidden: true, error: 'the tab is in the background' };
+      }
+    } catch { /* cannot tell; let the capture decide */ }
   }
   try {
     return { ok: true, dataUrl: await captureViewport(windowId) };
@@ -249,7 +285,7 @@ async function openFallback(dataUrl, tabId) {
     await openEditorWindow({ capturedImage: dataUrl }, await fallbackWindowSize(dataUrl));
     return true;
   } catch (err) {
-    await reportFailure(tabId, 'could not open the editor', String(err));
+    await reportFailure(tabId, 'couldn’t open the editing window', String(err));
     return false;
   }
 }
@@ -271,11 +307,11 @@ async function openFullPageEditor({ dataUrl, width, height, capped }, tabId) {
   try {
     made = await askOffscreen('make-blob-url', { dataUrl });
   } catch (err) {
-    await reportFailure(tabId, 'could not prepare the capture', String(err));
+    await reportFailure(tabId, 'couldn’t get the capture ready', String(err));
     return { ok: false, error: String(err) };
   }
   if (!made?.ok) {
-    await reportFailure(tabId, 'could not prepare the capture', made?.error);
+    await reportFailure(tabId, 'couldn’t get the capture ready', made?.error);
     return made ?? { ok: false, error: 'offscreen did not respond' };
   }
 
@@ -290,7 +326,7 @@ async function openFullPageEditor({ dataUrl, width, height, capped }, tabId) {
      * would pin the whole PNG in memory for the life of the offscreen
      * document. */
     revokeBlobUrl(made.url);
-    await reportFailure(tabId, 'could not open the editor', String(err));
+    await reportFailure(tabId, 'couldn’t open the editing window', String(err));
     return { ok: false, error: String(err) };
   }
 }
@@ -329,8 +365,8 @@ async function launch(tab) {
   } catch (err) {
     await reportFailure(
       tab.id,
-      'this page cannot be captured',
-      'Browser pages and the Web Store are off-limits to extensions.'
+      'can’t capture this page',
+      'Your browser keeps its own pages and the Web Store off-limits to extensions.'
     );
     console.warn('[NhakoCapture] capture refused:', err);
     return;
@@ -359,7 +395,7 @@ async function launch(tab) {
   try {
     cssText = await overlayStyles();
   } catch (err) {
-    await reportFailure(tab.id, 'overlay styles failed to load', String(err));
+    await reportFailure(tab.id, 'couldn’t load its own styles — try reloading the extension', String(err));
     return;
   }
 
@@ -518,11 +554,15 @@ async function copyImage(dataUrl) {
 
 /* --- save ---------------------------------------------------------------- */
 
+/* Named the way macOS names a screenshot -- "NhakoCapture 2026-09-29 at
+ * 14.03.22.png" -- so it reads as a date and time at a glance and sorts
+ * correctly in any file list. Dots, not colons, in the time: a colon is not a
+ * legal filename character on Windows. */
 function timestampedName() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
-  return `Nhako_${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
-         `_${p(d.getHours())}-${p(d.getMinutes())}-${p(d.getSeconds())}.png`;
+  return `${NAME} ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}` +
+         ` at ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}.png`;
 }
 
 /* Blob URLs are revoked when their download settles, not on a timer -- the Save
@@ -539,6 +579,14 @@ function revokeBlobUrl(url) {
 }
 
 const pendingDownloads = new Map(); // downloadId -> blob url
+
+/* Chromium has reported a dismissed Save As dialog both as the interrupt
+ * reason USER_CANCELED and as a plain "Download canceled". Matching only the
+ * first turned the second into "Couldn't save that" -- an error message for
+ * the user changing their mind. */
+function isCancel(err) {
+  return /USER_CANCEL|cancel/i.test(String(err?.message ?? err));
+}
 
 chrome.downloads.onChanged.addListener(({ id, state }) => {
   if (!state || !pendingDownloads.has(id)) return;
@@ -568,7 +616,7 @@ async function saveImage(dataUrl, filename) {
     revokeBlobUrl(made.url);
     // Cancelling the Save As dialog lands here and is not an error worth
     // shouting about.
-    return { ok: false, error: String(err), cancelled: /USER_CANCELED/i.test(String(err)) };
+    return { ok: false, error: String(err), cancelled: isCancel(err) };
   }
 }
 
@@ -623,7 +671,7 @@ async function savePdf(tabId) {
       await pdfViaPrintDialog(tabId);
       return { ok: true, via: 'print-dialog' };
     } catch (fallbackErr) {
-      await reportFailure(tabId, 'could not produce a PDF', String(fallbackErr));
+      await reportFailure(tabId, 'couldn’t make a PDF of this page', String(fallbackErr));
       return { ok: false, error: String(fallbackErr) };
     }
   }
@@ -643,7 +691,7 @@ async function savePdf(tabId) {
     return { ok: true, via: 'debugger', downloadId: id };
   } catch (err) {
     revokeBlobUrl(made.url);
-    return { ok: false, error: String(err), cancelled: /USER_CANCELED/i.test(String(err)) };
+    return { ok: false, error: String(err), cancelled: isCancel(err) };
   }
 }
 
@@ -692,7 +740,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return false;
 
     case 'nc:capture-tile':
-      captureTile(sender.tab?.windowId).then(sendResponse, (err) =>
+      captureTile(sender.tab?.windowId, sender.tab?.id).then(sendResponse, (err) =>
         sendResponse({ ok: false, error: String(err) })
       );
       return true;

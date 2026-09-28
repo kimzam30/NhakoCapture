@@ -168,7 +168,7 @@ async function main() {
     await mount(cdp);
     await cdp.eval(`(() => { const sr = document.getElementById('nhako-capture-host').shadowRoot;
       [...sr.querySelectorAll('.nc-pill .nc-btn')]
-        .find(b => b.getAttribute('aria-label') === 'Capture full page').focus(); return 1; })()`);
+        .find(b => b.getAttribute('aria-label') === 'Whole page').focus(); return 1; })()`);
     await sleep(150);
     await shot(cdp, 'review-fullpage-disabled-focused-desktop-1280');
 
@@ -177,7 +177,7 @@ async function main() {
     await sleep(400);
     await mount(cdp);
     await cdp.eval(`(() => { NhakoCapture.modules.overlay.session.toolbar
-      .setNotice('Full page capped at 16384px — page is longer'); return 1; })()`);
+      .setNotice('Cut off at 16384px — the page keeps going'); return 1; })()`);
     await sleep(150);
     await shot(cdp, 'review-cap-notice-desktop-1280');
 
