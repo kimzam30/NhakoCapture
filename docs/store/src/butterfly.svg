@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="250 330 524 380">
+  <!-- The poster's butterfly (docs/launch/poster.html), on its own for the store graphics. -->
+  <defs>
+      <linearGradient id="wt" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffa9d6"/><stop offset="1" stop-color="#f46fb4"/></linearGradient>
+      <linearGradient id="wl" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cdb6fa"/><stop offset="1" stop-color="#a184ee"/></linearGradient>
+      <g id="half" stroke="#4a1942" stroke-width="22" stroke-linejoin="round">
+        <path d="M530 522C556 432 630 350 694 356C756 362 760 444 712 494C674 534 602 544 532 540Z" fill="url(#wt)"/>
+        <path d="M530 552C598 552 656 580 660 628C664 676 616 700 580 680C546 660 530 612 530 552Z" fill="url(#wl)"/>
+        <circle cx="668" cy="420" r="21" fill="#fff" stroke="none"/>
+        <circle cx="616" cy="638" r="14" fill="#fff" stroke="none"/>
+        <path d="M518 446C522 408 534 382 556 366" fill="none" stroke-linecap="round" stroke-width="16"/>
+        <circle cx="560" cy="362" r="13" fill="#4a1942" stroke="none"/>
+      </g>
+      <g id="bfly">
+        <use href="#half"/>
+        <use href="#half" transform="translate(1024 0) scale(-1 1)"/>
+        <rect x="494" y="438" width="36" height="236" rx="18" fill="#4a1942"/>
+      </g>
+    </defs>
+  <use href="#bfly"/>
+</svg>

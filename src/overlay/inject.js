@@ -431,9 +431,8 @@
     }
 
     /* Full-page capture. The loop hides the overlay and drives the document,
-     * geometry decides the composition, and stitch draws it. The editor handoff
-     * (T7) is the last piece missing, so for now the composed canvas is
-     * reported rather than delivered.
+     * geometry decides the composition, stitch draws it, and the service
+     * worker hands the result to the editor window.
      *
      * `session` is re-checked after every await: destroy() can run underneath
      * this (Esc, a resize, the tab navigating) and nulls it. */
@@ -558,10 +557,9 @@
         }
       }
     }
-    /* Exposed the same way `finish` is, and for the same reason: until T8 puts
-     * a button on the pill there is no other way to drive this by hand. From
-     * DevTools, with the console context switched to the extension's isolated
-     * world:
+    /* Exposed for tools/preview.mjs, which drives the capture without the
+     * pill. From DevTools, with the console context switched to the
+     * extension's isolated world:
      *   NhakoCapture.modules.overlay.session.captureFullPage()
      */
     session.captureFullPage = captureFullPage;

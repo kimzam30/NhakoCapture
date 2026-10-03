@@ -174,9 +174,8 @@
       },
       {
         label: 'Save as PDF',
-        title: 'Save the whole page as a PDF',
+        title: 'Save the whole page as a PDF from the print dialog',
         iconName: 'pdf',
-        // Phase 5. Until the handler exists this button is simply absent.
         when: () => typeof actions.savePdf === 'function',
         onClick: () => actions.savePdf(),
       },

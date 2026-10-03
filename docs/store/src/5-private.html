@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Store 5 Private</title>
+<link rel="stylesheet" href="store.css">
+<style>
+  html, body { width: 1280px; height: 800px; }
+  header { position: absolute; top: 90px; left: 0; right: 0; text-align: center; }
+  .logo { width: 104px; height: 104px; filter: drop-shadow(0 10px 24px rgba(74,25,66,.25)); }
+  h1 { margin-top: 26px; font-size: 62px; }
+  .sub { margin: 18px auto 0; max-width: 640px; font-size: 20px; }
+  .grid { position: absolute; left: 110px; right: 110px; top: 450px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .card { background: #fff; border-radius: 18px; padding: 26px 22px; text-align: left;
+          box-shadow: 0 0 0 1px rgba(74,25,66,.08), 0 16px 34px -20px rgba(74,25,66,.4); }
+  .big { font-size: 40px; font-weight: 750; letter-spacing: -.04em; color: var(--pink); }
+  .card p { margin-top: 6px; font-size: 16px; color: var(--muted); line-height: 1.35; }
+  .keys { position: absolute; left: 0; right: 0; bottom: 64px; justify-content: center; display: flex; }
+</style></head><body>
+<div class="glow"></div>
+<img class="fly" src="butterfly.svg" style="left:250px;top:120px;width:52px;transform:rotate(-14deg)">
+<img class="fly" src="butterfly.svg" style="left:980px;top:170px;width:64px;transform:rotate(12deg)">
+<header>
+  <img class="logo" src="../../brand/logo.svg" alt="">
+  <h1>Nothing leaves <span class="grad">your computer.</span></h1>
+  <p class="sub">No account, no uploads, no tracking. Your screenshots go to your clipboard or your Downloads folder, and nowhere else.</p>
+</header>
+<div class="grid">
+  <div class="card"><div class="big">0</div><p>network requests. It works offline.</p></div>
+  <div class="card"><div class="big">0</div><p>accounts to make or passwords to remember.</p></div>
+  <div class="card"><div class="big">0</div><p>analytics, ads or trackers. Ever.</p></div>
+  <div class="card"><div class="big">Free</div><p>No trial, no watermark, no upsell.</p></div>
+</div>
+<div class="keys"><span class="cap">Ctrl</span><span class="cap">⇧</span><span class="cap">5</span><span class="or">or</span><span class="cap">⌘</span><span class="cap">⇧</span><span class="cap">2</span><span class="or">on a Mac, and you’re capturing</span></div>
+</body></html>

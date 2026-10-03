@@ -177,8 +177,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 /* --- user-visible failure ------------------------------------------------ */
 
 /* No notifications permission: a red badge on our own action costs nothing and
- * cannot be blocked by the page. Phase 6 (T17) adds the in-overlay toast for
- * the cases where an overlay does exist to show it in. */
+ * cannot be blocked by the page. When an overlay is up, it reports in its own
+ * pill instead. */
 async function reportFailure(tabId, short, detail) {
   console.warn('[NhakoCapture]', short, detail ?? '');
   failingTabs.add(tabId);
@@ -366,7 +366,7 @@ async function launch(tab) {
     await reportFailure(
       tab.id,
       'can’t capture this page',
-      'Your browser keeps its own pages and the Web Store off-limits to extensions.'
+      'The browser keeps its own pages and the Web Store off-limits to extensions.'
     );
     console.warn('[NhakoCapture] capture refused:', err);
     return;
@@ -399,10 +399,18 @@ async function launch(tab) {
     return;
   }
 
+  /* A start that throws inside the page (a bitmap that will not decode, a
+   * zero-sized viewport) answers { ok: false } rather than rejecting. Treated
+   * the same as no answer at all: the capture is in hand, so it goes to the
+   * editor window instead of vanishing with nothing on screen. */
+  let started;
   try {
-    await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText }, { frameId: 0 });
+    started = await chrome.tabs.sendMessage(tab.id, { type: 'nc:start', dataUrl, cssText }, { frameId: 0 });
   } catch (err) {
-    console.warn('[NhakoCapture] overlay did not answer, using the editor window:', err);
+    started = { ok: false, error: String(err) };
+  }
+  if (!started?.ok) {
+    console.warn('[NhakoCapture] overlay did not start, using the editor window:', started?.error);
     await openFallback(dataUrl, tab.id);
   }
 }
@@ -602,9 +610,8 @@ async function saveImage(dataUrl, filename) {
   if (!made?.ok) return made ?? { ok: false, error: 'offscreen did not respond' };
 
   try {
-    // saveAs opens a real destination picker. v1 clicked a synthetic <a download>
-    // instead, which is why "Save Button after ss, no popup for destination" is
-    // an open bug in todo.md.
+    // saveAs opens a real destination picker. v1 clicked a synthetic
+    // <a download> instead, which never let the user choose a folder.
     const id = await chrome.downloads.download({
       url: made.url,
       filename: filename || timestampedName(),
@@ -622,76 +629,26 @@ async function saveImage(dataUrl, filename) {
 
 /* --- full page as PDF -----------------------------------------------------
  *
- * Opera's "Save page as PDF". Chromium exposes Page.printToPDF only through the
- * DevTools protocol, so this attaches the debugger for the second or so the
- * render takes and detaches immediately. That surfaces Chromium's "started
- * debugging this browser" infobar for the duration -- accepted knowingly as the
- * price of true parity, and the reason detach is in a finally block.
+ * Hands the page to the browser's own print preview, where "Save as PDF" is
+ * the default destination. A one-click route exists -- Page.printToPDF over
+ * the DevTools protocol -- but it needs the `debugger` permission, which warns
+ * at install that the extension can "read and change all your data on all
+ * websites". That is too high a price for saving one click, on an extension
+ * whose whole promise is that it touches nothing.
  *
- * Attach fails when DevTools is already open on the tab, so there is a second
- * route: window.print(), which lands the user in Brave's own print preview with
- * "Save as PDF" preselected. Two clicks instead of one, no banner.
+ * The overlay has already torn itself down by the time this runs, so the
+ * print preview renders the page as the user left it.
  */
-async function pdfViaDebugger(tabId) {
-  const target = { tabId };
-  await chrome.debugger.attach(target, '1.3');
-  try {
-    await chrome.debugger.sendCommand(target, 'Page.enable');
-    const result = await chrome.debugger.sendCommand(target, 'Page.printToPDF', {
-      printBackground: true,
-      transferMode: 'ReturnAsBase64',
-    });
-    if (!result?.data) throw new Error('printToPDF returned no data');
-    return result.data;
-  } finally {
-    // Detach even on failure: a stranded attachment leaves the infobar up for
-    // the life of the tab.
-    try { await chrome.debugger.detach(target); } catch { /* already gone */ }
-  }
-}
-
-async function pdfViaPrintDialog(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: () => window.print(),
-  });
-}
-
-function timestampedPdfName() {
-  return timestampedName().replace(/\.png$/, '.pdf');
-}
-
 async function savePdf(tabId) {
-  let base64;
   try {
-    base64 = await pdfViaDebugger(tabId);
-  } catch (err) {
-    console.warn('[NhakoCapture] debugger route unavailable, falling back:', err);
-    try {
-      await pdfViaPrintDialog(tabId);
-      return { ok: true, via: 'print-dialog' };
-    } catch (fallbackErr) {
-      await reportFailure(tabId, 'couldn’t make a PDF of this page', String(fallbackErr));
-      return { ok: false, error: String(fallbackErr) };
-    }
-  }
-
-  const made = await askOffscreen('make-blob-url', {
-    dataUrl: `data:application/pdf;base64,${base64}`,
-  });
-  if (!made?.ok) return made ?? { ok: false, error: 'offscreen did not respond' };
-
-  try {
-    const id = await chrome.downloads.download({
-      url: made.url,
-      filename: timestampedPdfName(),
-      saveAs: true,
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => window.print(),
     });
-    pendingDownloads.set(id, made.url);
-    return { ok: true, via: 'debugger', downloadId: id };
+    return { ok: true, via: 'print-dialog' };
   } catch (err) {
-    revokeBlobUrl(made.url);
-    return { ok: false, error: String(err), cancelled: isCancel(err) };
+    await reportFailure(tabId, 'couldn’t open the print dialog for this page', String(err));
+    return { ok: false, error: String(err) };
   }
 }
 
@@ -750,11 +707,6 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         sendResponse({ ok: false, error: String(err) })
       );
       return true;
-
-    case 'nc:failed':
-      reportFailure(sender.tab?.id, msg.short ?? 'something went wrong', msg.detail);
-      sendResponse({ ok: true });
-      return false;
 
     default:
       return false;

@@ -10,11 +10,13 @@ Press one shortcut. The page holds still, you drag a box around what matters,
 scribble on it, and it's on your clipboard, ready to paste.
 
 <p>
+  <img alt="Version 2.2.0" src="https://img.shields.io/badge/version-2.2.0-c3a6f0">
   <img alt="Manifest V3" src="https://img.shields.io/badge/Manifest-V3-ff91e7">
   <img alt="Plain JavaScript" src="https://img.shields.io/badge/JavaScript-plain-c3a6f0">
   <img alt="Dependencies: none" src="https://img.shields.io/badge/dependencies-0-ff91e7">
   <img alt="Build step: none" src="https://img.shields.io/badge/build%20step-none-c3a6f0">
   <img alt="Tracking: none" src="https://img.shields.io/badge/tracking-none-ff91e7">
+  <img alt="Host permissions: none" src="https://img.shields.io/badge/host%20permissions-none-c3a6f0">
 </p>
 
 </div>
@@ -53,12 +55,35 @@ alongside [Nhako Tools](https://tools.nhako.com) and
 | **Undo everything** | Every mark can be taken back, one at a time, all the way to the start. |
 | **Copy or save** | Straight to your clipboard as a real image, or to a proper Save dialog where you choose the folder. |
 | **The whole page, too** | It scrolls the page for you and stitches it into one tall image. Sticky headers show up once, not on every screenful. |
-| **Or a PDF** | The entire page as a PDF, not just the part on screen. |
+| **Or a PDF** | Sends the entire page to your browser's print preview, with *Save as PDF* ready to go. |
 | **Private by design** | No internet connection, no account, no analytics. Nothing leaves your computer. |
+
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/store/screenshot-1-hero.png" alt="Screenshot anything. Never leave the tab: the overlay framing part of a web page, with a highlight, a circle, an arrow and a text label"></td>
+    <td><img src="docs/store/screenshot-2-markup.png" alt="Draw right on the page: arrow, text, highlighter and the magnifier in use, with the list of tools"></td>
+  </tr>
+  <tr>
+    <td><img src="docs/store/screenshot-3-blur.png" alt="Blur that really hides: an email, phone number and card number blurred on a billing page"></td>
+    <td><img src="docs/store/screenshot-4-whole-page.png" alt="All of it, in one image: a whole article stitched into one tall 2560 by 4901 pixel screenshot"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center"><img src="docs/store/screenshot-5-private.png" width="50%" alt="Nothing leaves your computer: no network requests, no accounts, no analytics, and free"></td>
+  </tr>
+</table>
+
+Every product shot is drawn by the extension's own code in a real browser, not
+mocked up. See [For developers](#for-developers) for how they're made.
 
 ## Install
 
-It isn't on the Web Store yet, so you load it yourself. It takes a minute:
+**Chrome Web Store:** coming soon. The link will go here once it's approved.
+It works in Chrome, Brave, Edge and other Chromium browsers.
+
+Until then, or if you'd rather run it straight from the source, load it
+yourself. It takes a minute:
 
 1. Download or clone this repository.
 2. Open your browser's extensions page: `chrome://extensions`, `brave://extensions`
@@ -88,7 +113,8 @@ The page dims and holds still. Then:
 - **Visible area** frames everything on screen.
 - **Whole page** scrolls the page and captures all of it, then opens it in a new
   window for you to mark up.
-- **Save as PDF** saves the entire page as a PDF.
+- **Save as PDF** opens the print preview for the entire page, with *Save as PDF*
+  already chosen.
 
 Once you've framed something, the tool bar slides up underneath. Pick a tool,
 draw, then hit **Copy** or **Save**. You'll see a quick flash and a tick, and
@@ -140,7 +166,24 @@ They're the slower option, and here's why:
 | `storage` | To hand a capture to the editing window on pages where the overlay can't run. |
 | `downloads` | To open a real Save dialog, so you pick where the file goes. |
 | `offscreen` | To copy images on plain `http://` pages, where the page itself isn't allowed to use the clipboard. On those pages the copy pastes into chats and documents, but not into image editors, and NhakoCapture tells you so. |
-| `debugger` | **Only** for *Save as PDF*. It's the only way a browser lets an extension make a PDF of a page. It's switched on for the second the PDF takes and switched off straight after, and your browser shows a "started debugging" banner during that time. If it can't be used, you get the normal print dialog instead. It's never used for anything else. |
+
+No host permissions, no access to your browsing history, and no network
+requests. See [PRIVACY.md](PRIVACY.md).
+
+## What's new in 2.2
+
+- **Ready for the Chrome Web Store.** A [privacy policy](PRIVACY.md), a full
+  store listing, and screenshots and promo tiles at the store's exact sizes.
+- **A solid Copy button.** The Copy button and the tick after a copy are now
+  one flat brand pink instead of a pink-to-lavender gradient. The store
+  graphics and the launch poster switched to solid pink to match.
+- **Fewer permissions.** The `debugger` permission is gone. *Save as PDF* now
+  opens your browser's print preview instead, so installing NhakoCapture no
+  longer warns that it can "read and change all your data on all websites".
+- **Fixed: a capture could disappear** if the overlay failed to start on an
+  unusual page. It now opens in the editing window instead.
+- **Tidier code.** Old comments and a message nothing used are gone, and the
+  version number now lives only in `manifest.json`.
 
 ## What's new in 2.1
 
@@ -175,9 +218,12 @@ No bundler, no framework, no dependencies. The code you read is the code that ru
 
 ```
 manifest.json          Manifest V3
+PRIVACY.md             the privacy policy the Web Store listing links to
 icons/                 made from docs/brand by tools/make-icons.py
 docs/brand/            the logo (SVG masters and a PNG)
 docs/launch/           the launch poster, as HTML and PNG
+docs/store/            Chrome Web Store listing: LISTING.md, the graphics,
+                       their HTML sources (src/) and product shots (raw/)
 src/
 ├── background.js      captures FIRST, then adds the overlay; routes messages
 ├── offscreen.js       clipboard fallback and blob URLs
@@ -200,7 +246,7 @@ src/
 │   ├── tokens.css     design tokens ("dusk glass")
 │   └── overlay.css    overlay styles and motion
 └── fallback/          the editing window, for browser pages and whole-page captures
-tools/                 tests, icon and poster rendering
+tools/                 tests, packaging, store graphics, icon and poster rendering
 ```
 
 Three decisions shape everything else:
@@ -222,7 +268,9 @@ marks over the capture. That's what makes undo possible.
 The look comes from the Nhako family. [Nhako Tools](https://tools.nhako.com) gave
 it the brand pink (`#FF91E7`) and the rule of one typeface, San Francisco,
 through the system and never downloaded. NhakoSearch and NeraOS gave it lavender
-(`#C3A6F0`), the plum ink, the butterfly, and the striped progress bar. The feel
+(`#C3A6F0`), the plum ink, the butterfly, and the striped progress bar. The
+one button that finishes the job, **Copy**, is solid brand pink with plum
+text (8.75:1), so there's never any doubt where to click. The feel
 comes from macOS's own screenshot tool: frosted dark glass, hairline edges, and
 springs that settle instead of bouncing.
 
@@ -237,7 +285,7 @@ with a pure white page behind the glass.
 ./tools/test.sh
 ```
 
-That runs everything: about 480 unit checks and 218 checks in a real browser.
+That runs everything: about 475 unit checks and 218 checks in a real browser.
 
 ```bash
 node tools/preview.mjs out/
@@ -255,6 +303,22 @@ It also makes the screenshot at the top of this page:
 node tools/preview.mjs out/ --hero
 ```
 
+### Releasing to the Chrome Web Store
+
+1. Bump `"version"` in `manifest.json`. The store refuses a version it has
+   already seen.
+2. Build the upload. This runs every check first, then zips only
+   `manifest.json`, `icons/` and `src/`:
+
+   ```bash
+   ./tools/package.sh
+   ```
+
+3. Upload `dist/NhakoCapture-<version>.zip` in the
+   [developer dashboard](https://chrome.google.com/webstore/devconsole). For the
+   first release, fill in every field from
+   [`docs/store/LISTING.md`](docs/store/LISTING.md).
+
 To rebuild the brand assets:
 
 ```bash
@@ -263,6 +327,15 @@ python3 tools/make-icons.py
 
 ```bash
 node tools/render-poster.mjs
+```
+
+To rebuild the Chrome Web Store graphics. The first script drives the real
+overlay in headless Chrome, including a real scroll-and-stitch, to capture the
+product shots. The second frames them into the screenshots and promo tiles at
+the store's exact sizes, as 24-bit PNGs with no transparency:
+
+```bash
+node tools/store-shots.mjs && node tools/render-store.mjs
 ```
 
 ## Where it differs from Opera
@@ -282,17 +355,22 @@ On purpose, and not by much:
 - **Endless feeds aren't chased.** A page that keeps growing as you scroll is
   captured as far as it existed when you started.
 
-## Launch poster
+## Posters
 
 <div align="center">
-  <img src="docs/launch/poster.png" alt="NhakoCapture launch poster: 'Screenshot anything. Never leave the tab.' above a browser window showing the overlay in use" width="600">
+  <img src="docs/store/promo-marquee-1400x560.png" alt="NhakoCapture marquee: 'Screenshot anything. Never leave the tab.' beside a browser window showing the overlay in use" width="100%">
+  <br><br>
+  <img src="docs/launch/poster.png" alt="NhakoCapture launch poster: 'Screenshot anything. Never leave the tab.' above a browser window showing the overlay in use, with 'Free on the Chrome Web Store' underneath" width="520">
+  &nbsp;
+  <img src="docs/store/promo-small-440x280.png" alt="NhakoCapture small promo tile: the butterfly logo, the name, and 'Screenshot anything. Never leave the tab.'" width="300">
 </div>
 
 ## Status
 
-Version 2.1. Everything described above works. The browser checks drive a real
-Chromium with real input, but they don't replace trying the extension in your own
-browser, and that hands-on pass is the one piece of work still open.
+Version 2.2, packaged and ready for the Chrome Web Store. Everything
+described above works. The browser checks drive a real Chromium with real input,
+but they don't replace trying the extension in your own browser, so do that
+hands-on pass with the packaged zip before each release.
 
 ## Credits
 

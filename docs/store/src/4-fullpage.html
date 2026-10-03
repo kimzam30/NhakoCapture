@@ -1,0 +1,36 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Store 4 Whole page</title>
+<link rel="stylesheet" href="store.css">
+<style>
+  html, body { width: 1280px; height: 800px; }
+  .copy { position: absolute; left: 64px; top: 150px; width: 470px; }
+  h1 { margin-top: 14px; font-size: 54px; }
+  .sub { margin-top: 20px; font-size: 19px; }
+  ul { margin-top: 26px; list-style: none; display: grid; gap: 12px; font-size: 17px; color: var(--ink); }
+  li { display: flex; gap: 10px; align-items: baseline; }
+  li::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--pink); flex: none; transform: translateY(-2px); }
+  .sheet { position: absolute; left: 780px; top: 40px; width: 376px; border-radius: 12px; overflow: hidden; background: #fff;
+           box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 30px 60px -20px rgba(74,25,66,.35), 0 14px 30px -18px rgba(0,0,0,.25); }
+  .sheet img { display: block; width: 100%; }
+  .size { position: absolute; left: 1060px; top: 22px; background: rgba(28,22,32,.92); color: #fff; font-size: 13px; font-weight: 600;
+          padding: 5px 9px; border-radius: 7px; letter-spacing: .01em; }
+  .badge { margin-top: 34px; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+  .badge .icon { position: relative; width: 40px; height: 40px; border-radius: 10px; background: #fff;
+                 box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 8px 20px -10px rgba(74,25,66,.4); display: flex; align-items: center; justify-content: center; }
+  .badge .icon img { width: 26px; }
+  .badge .count { position: absolute; right: -10px; bottom: -6px; background: #ff91e7; color: #2a0f26; font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 6px; }
+</style></head><body>
+<div class="glow"></div>
+<div class="copy">
+  <span class="kicker">WHOLE PAGE</span>
+  <h1>All of it, <span class="grad">in one image.</span></h1>
+  <p class="sub">One click scrolls the page for you and stitches every screenful together. Then mark it up like any other capture.</p>
+  <ul>
+    <li>Sticky headers show up once, not on every screenful</li>
+    <li>Pictures that load as you scroll are there</li>
+    <li>Or save the whole page as a PDF</li>
+  </ul>
+  <div class="badge"><span class="icon"><img src="../../brand/logo-small.svg" alt=""><span class="count">3/9</span></span>Progress counts along on the toolbar icon</div>
+</div>
+<div class="sheet"><img src="../raw/fullpage.png" alt=""></div>
+<div class="size">2560 × 4901</div>
+</body></html>

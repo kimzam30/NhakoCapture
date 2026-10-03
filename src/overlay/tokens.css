@@ -53,10 +53,11 @@
      forced-colors can hand it to the OS without touching the fills. */
   --nc-accent-bright:   var(--nc-pink);
 
-  /* The primary button: pink into lavender, the family gradient, with plum
-     text. Its lowest-contrast stop still gives the text 8.79:1. */
-  --nc-accent-fill:     linear-gradient(135deg, #ff9ee0 0%, #e7a4ef 48%, #c7aaf5 100%);
-  --nc-accent-fill-hover: linear-gradient(135deg, #ffb3e8 0%, #edb6f3 48%, #d3bbf8 100%);
+  /* The primary button: solid brand pink with plum text, 8.75:1. Solid
+     rather than a gradient, so the one button that matters reads as one
+     flat, confident colour. */
+  --nc-accent-fill:     var(--nc-accent);
+  --nc-accent-fill-hover: var(--nc-accent-hover);
   --nc-text-on-accent:  var(--nc-plum);
 
   /* Stripes for anything in progress, straight from the NeraOS boot bar. */

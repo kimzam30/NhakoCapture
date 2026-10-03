@@ -22,7 +22,9 @@
 (() => {
   'use strict';
 
-  const VERSION = '2.1.0';
+  /* Read from the manifest rather than repeated here, so a release bumps one
+   * file and the two can never disagree. */
+  const VERSION = globalThis.chrome?.runtime?.getManifest?.().version ?? 'dev';
   const existing = globalThis.NhakoCapture;
 
   if (existing) {

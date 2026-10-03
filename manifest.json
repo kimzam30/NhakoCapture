@@ -1,16 +1,16 @@
 {
   "manifest_version": 3,
   "name": "NhakoCapture",
-  "version": "2.1.0",
-  "description": "Screenshots without leaving the tab. Freeze the page, drag a box, mark it up, then copy or save.",
+  "version": "2.2.0",
+  "description": "Screenshot any part of a page, mark it up with arrows, blur and text, then copy or save. Full-page capture too. No tracking.",
   "minimum_chrome_version": "116",
+  "homepage_url": "https://github.com/kimzam30/NhakoCapture",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
     "offscreen",
-    "downloads",
-    "debugger"
+    "downloads"
   ],
   "background": {
     "service_worker": "src/background.js"

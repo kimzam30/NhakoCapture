@@ -232,10 +232,10 @@
   height: 16px;
   border-radius: 50%;
   animation: nc-pop-in var(--nc-duration-enter) var(--nc-ease-spring) both;
-  /* A plum tick over the brand gradient disc. */
+  /* A plum tick on a solid brand-pink disc, matching the Copy button. */
+  background-color: var(--nc-accent);
   background-image:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.6 8.4l2.2 2.2 4.6-4.9' fill='none' stroke='%232a0f26' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"),
-    linear-gradient(135deg, #ff9ee0, #c7aaf5);
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.6 8.4l2.2 2.2 4.6-4.9' fill='none' stroke='%232a0f26' stroke-width='1.9' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 .nc-hint[data-tone='error'] { color: #ffb4ae; font-weight: var(--nc-weight-medium); }
 

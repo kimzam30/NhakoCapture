@@ -30,7 +30,7 @@ function ok(label, cond) { eq(label, !!cond, true); }
  * answering. It reproduces the exact shape of the copy bug: createDocument
  * resolves, but offscreen.js has not registered its listener yet. */
 function loadBackground({ captureFails = false, injectFails = false, cssFails = false,
-                         attachFails = false, printFails = false,
+                         startFails = false,
                          offscreenSilentFor = 0, offscreenNeverAnswers = false, windowFails = false,
                          existingContexts = 0, createFails = null, overlayUp = false,
                          activeTabId = null } = {}) {
@@ -67,7 +67,8 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
        * below are about the handoff. */
       sendMessage: async (...a) => {
         calls.push({ name: a[1]?.type === 'nc:dismiss' ? 'tabs.probe' : 'tabs.sendMessage', args: a });
-        return a[1]?.type === 'nc:dismiss' ? { ok: true, dismissed: overlayUp } : { ok: true };
+        if (a[1]?.type === 'nc:dismiss') return { ok: true, dismissed: overlayUp };
+        return startFails ? { ok: false, error: 'captured bitmap failed to decode' } : { ok: true };
       },
     },
     scripting: {
@@ -110,21 +111,6 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
         calls.push({ name: 'windows.create', args: a });
         if (windowFails) throw new Error('no room for a window');
         return { id: 9 };
-      },
-    },
-    debugger: {
-      attach: async (...a) => {
-        calls.push({ name: 'debugger.attach', args: a });
-        if (attachFails) throw new Error('another debugger is already attached');
-      },
-      detach: async (...a) => { calls.push({ name: 'debugger.detach', args: a }); },
-      sendCommand: async (target, method, params) => {
-        calls.push({ name: `debugger.${method}`, args: [target, params] });
-        if (method === 'Page.printToPDF') {
-          if (printFails) throw new Error('printToPDF failed');
-          return { data: 'JVBERi0xLjQK' };
-        }
-        return {};
       },
     },
     downloads: {
@@ -381,51 +367,40 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('filename is timestamped .png', /^NhakoCapture \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.png$/.test(dl.args[0].filename));
 }
 
-/* --- PDF: the debugger route ---------------------------------------------- */
+/* --- PDF: the print dialog ------------------------------------------------
+ * No debugger permission: the page goes to the browser's own print preview,
+ * where Save as PDF is the default. Nothing is downloaded on our side.        */
 {
   const { listeners, calls, names } = loadBackground();
-  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
-
+  let res;
+  await new Promise((done) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, (r) => { res = r; done(); }));
   const seq = names();
-  ok('debugger attached', seq.includes('debugger.attach'));
-  ok('Page.enable before printing', seq.indexOf('debugger.Page.enable') < seq.indexOf('debugger.Page.printToPDF'));
-  ok('printToPDF called', seq.includes('debugger.Page.printToPDF'));
-  ok('debugger detached', seq.includes('debugger.detach'));
-  ok('detach happens after printing',
-    seq.lastIndexOf('debugger.detach') > seq.indexOf('debugger.Page.printToPDF'));
-
-  const print = calls.find((c) => c.name === 'debugger.Page.printToPDF');
-  eq('backgrounds are printed', print.args[1].printBackground, true);
-
-  const dl = calls.find((c) => c.name === 'downloads.download');
-  ok('a download was requested', !!dl);
-  eq('destination picker is opened', dl.args[0].saveAs, true);
-  ok('saved as .pdf', /^NhakoCapture \d{4}-\d{2}-\d{2} at \d{2}\.\d{2}\.\d{2}\.pdf$/.test(dl.args[0].filename));
-  ok('never falls back to the print dialog when the debugger works',
-    !seq.includes('executeScript'));
-}
-
-/* --- PDF: attach refused (DevTools already open) -------------------------- */
-{
-  const { listeners, calls, names } = loadBackground({ attachFails: true });
-  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
-  const seq = names();
-  ok('attach was attempted', seq.includes('debugger.attach'));
-  ok('falls back to the print dialog', seq.includes('executeScript'));
-  ok('no download is forced on the fallback path', !seq.includes('downloads.download'));
+  ok('PDF opens the print dialog', seq.includes('executeScript'));
   const inject = calls.find((c) => c.name === 'executeScript');
-  ok('the fallback injects a print call', /print/.test(String(inject.args[0].func)));
+  eq('...in the tab that asked', inject.args[0].target.tabId, 42);
+  ok('...by calling print()', /print/.test(String(inject.args[0].func)));
+  ok('no download is forced', !seq.includes('downloads.download'));
+  eq('reported as the print-dialog route', res.via, 'print-dialog');
 }
 
-/* --- PDF: printing fails after a successful attach ------------------------
- * The detach MUST still happen. A stranded attachment leaves Chromium's
- * "started debugging this browser" infobar up for the life of the tab.        */
+/* --- PDF: the page refuses the script ------------------------------------- */
 {
-  const { listeners, names } = loadBackground({ printFails: true });
-  await new Promise((res) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, res));
+  const { listeners, names } = loadBackground({ injectFails: true });
+  let res;
+  await new Promise((done) => listeners.message({ type: 'nc:pdf' }, { tab: { id: 42 } }, (r) => { res = r; done(); }));
+  eq('a refused print is reported as a failure', res.ok, false);
+  ok('...and shown on the badge', names().includes('setBadgeText'));
+}
+
+/* --- an overlay that answers but fails to start ------------------------------
+ * start() rejecting inside the page arrives as { ok: false }, not as a thrown
+ * error. It used to be ignored, so the capture vanished with nothing on screen. */
+{
+  const { listeners, names } = loadBackground({ startFails: true });
+  await listeners.action({ id: 42, windowId: 1, url: 'https://example.com' });
   const seq = names();
-  ok('detached even though printing threw', seq.includes('debugger.detach'));
-  ok('and still falls back to the print dialog', seq.includes('executeScript'));
+  ok('a failed start still delivers the capture', seq.includes('windows.create'));
+  ok('...after the page was asked first', seq.indexOf('tabs.sendMessage') < seq.indexOf('windows.create'));
 }
 
 /* --- offscreen-addressed messages are ignored by the background ---------- */

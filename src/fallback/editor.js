@@ -1,6 +1,6 @@
 /* NhakoCapture — fallback editor window
  *
- * For pages where a content script cannot run at all: brave://, chrome://, the
+ * For pages where a content script cannot run at all: chrome://, the
  * Web Store, the PDF viewer. The overlay cannot be mounted on them, so the same
  * capture is opened in an extension window and given the identical toolset.
  *
@@ -122,10 +122,7 @@
      * from, and revoking before that lands would leave the window empty. It is
      * revoked in the offscreen document that created it -- a blob URL cannot
      * be revoked from anywhere else -- and dropping it promptly matters
-     * because it pins the whole stitched PNG in memory until it goes.
-     *
-     * `captureCapped` is read out of storage with the rest of the one-shot and
-     * is consumed by T11, which states the cap in the pill. */
+     * because it pins the whole stitched PNG in memory until it goes. */
     if (stored.captureBlobUrl) {
       chrome.runtime
         .sendMessage({ type: 'nc:capture-consumed', url: stored.captureBlobUrl })

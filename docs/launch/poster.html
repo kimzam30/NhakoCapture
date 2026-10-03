@@ -6,7 +6,7 @@
 <!--
   NhakoCapture launch poster. Same stage as the NhakoSearch and Nhako Tools
   posters: pale Apple-white ground, one big San Francisco headline with a
-  pink-to-lavender second line, the real product in the middle, a dark pill to
+  solid pink second line, the real product in the middle, a dark pill to
   finish. The browser window shows docs/screenshot.png, which the extension's
   own code renders (node tools/preview.mjs out/ --hero) -- not a mockup.
 
@@ -50,11 +50,8 @@
     margin-top: 30px;
     font-size: 100px; line-height: 1.02; font-weight: 700; letter-spacing: -.045em;
   }
-  h1 .grad {
-    background: linear-gradient(95deg, #ff5fa2 0%, #d45fd8 50%, #8b6cf0 100%);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-    padding-bottom: 6px;
-  }
+  /* Solid pink, as in the Chrome Web Store graphics (docs/store). */
+  h1 .grad { color: #ec4899; }
   .sub {
     margin: 28px auto 0; max-width: 760px;
     font-size: 27px; line-height: 1.34; font-weight: 400; letter-spacing: -.012em; color: var(--muted);
@@ -105,8 +102,7 @@
   }
   .fact b {
     display: block; font-size: 44px; font-weight: 700; letter-spacing: -.035em; line-height: 1;
-    background: linear-gradient(95deg, #ff5fa2, #8b6cf0);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    color: #ec4899;
   }
   .fact span { display: block; margin-top: 10px; font-size: 18px; line-height: 1.35; color: var(--muted); }
 
@@ -184,8 +180,8 @@
   </section>
 
   <footer>
-    <div class="cta">Free for Chrome, Brave and Edge</div>
-    <p class="small">No sign-up. No build step. Load it and press the shortcut.</p>
+    <div class="cta">Free on the Chrome Web Store</div>
+    <p class="small">Works in Chrome, Brave and Edge. No sign-up. Add it and press the shortcut.</p>
   </footer>
 </body>
 </html>
