@@ -1,0 +1,978 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NhakoCapture Launch Film</title>
+<!--
+  NhakoCapture launch film, 1080 x 1920, for Reels, Shorts and TikTok.
+
+  Same stage as the launch poster: pale Apple-white ground, San Francisco,
+  ink headlines with a solid pink second line, the plum glass HUD for the
+  product itself. Flat colours only: no gradients anywhere, including the
+  logo, which is redrawn here with the master artwork's mid-tones.
+
+  Nothing in here runs on its own clock. window.render(t) paints the frame
+  for time t (seconds), so tools/render-video.mjs can step through it one
+  frame at a time and every render is identical. Open the file in a browser
+  to watch a live preview (it loops).
+
+  Render:  node tools/render-video.mjs  ->  docs/launch/nhakocapture-launch.mp4
+-->
+<style>
+  :root {
+    --ink: #1d1d1f;
+    --muted: #6e6e73;
+    --bg: #fbfbfd;
+    --pink: #ec4899;
+    --brand-pink: #ff91e7;
+    --lav: #c3a6f0;
+    --plum: #4a1942;
+    --plum-ink: #2a0f26;
+    --glass: rgba(29, 22, 32, .92);
+    --hud-text: #f7f1f9;
+    --hud-muted: rgba(247, 241, 249, .66);
+    --display: "SF Pro Display", "Inter", -apple-system, system-ui, sans-serif;
+    --text: "SF Pro Text", "Inter", -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; background: var(--bg); overflow: hidden; }
+  body { font-family: var(--display); color: var(--ink); -webkit-font-smoothing: antialiased; }
+  #stage { position: absolute; inset: 0; overflow: hidden; background: var(--bg); }
+  .layer { position: absolute; inset: 0; display: none; will-change: transform, opacity; }
+  .center { position: absolute; left: 0; right: 0; text-align: center; }
+  .line { display: block; overflow: hidden; padding: .04em 0 .12em; margin-bottom: -.12em; }
+  .line > span { display: block; will-change: transform; }
+
+  /* ---------- 1. logo ---------- */
+  #logo1 { position: absolute; left: 540px; top: 830px; width: 380px; height: 380px; }
+  #logo1 svg, #logo7 svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  #word1 { top: 1080px; font-size: 112px; font-weight: 700; letter-spacing: -.04em; }
+
+  /* ---------- 2. headline ---------- */
+  #head2 { top: 0; height: 1920px; display: flex; flex-direction: column; justify-content: center; }
+  #head2 .line { font-size: 168px; line-height: .98; font-weight: 700; letter-spacing: -.05em; }
+  .pink { color: var(--pink); }
+
+  /* ---------- 3. shortcut ---------- */
+  #title3 { top: 610px; font-size: 104px; font-weight: 700; letter-spacing: -.045em; }
+  #keys3 { position: absolute; top: 850px; left: 0; right: 0; display: flex; justify-content: center; gap: 30px; }
+  .cap {
+    position: relative; height: 200px; min-width: 200px; padding: 0 44px;
+    border-radius: 40px; background: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--text); font-size: 84px; font-weight: 500; color: var(--ink);
+    box-shadow: 0 0 0 2px rgba(0,0,0,.07), 0 10px 0 #e3e0e8, 0 26px 40px -16px rgba(74,25,66,.28);
+  }
+  #sub3 { top: 1170px; font-size: 42px; color: var(--muted); font-weight: 400; letter-spacing: -.01em; }
+  #sub3 b { font-weight: 500; color: var(--ink); }
+
+  /* ---------- 4. demo ---------- */
+  .cap4 { position: absolute; left: 60px; right: 60px; top: 150px; text-align: center; }
+  .cap4 h2 { font-size: 84px; line-height: 1.02; font-weight: 700; letter-spacing: -.045em; }
+  .cap4 p { margin-top: 22px; font-size: 38px; line-height: 1.25; color: var(--muted); letter-spacing: -.012em; }
+  #win {
+    position: absolute; left: 60px; top: 440px; width: 960px; height: 1160px;
+    border-radius: 26px; overflow: hidden; background: #fff;
+    box-shadow: 0 0 0 1.5px rgba(0,0,0,.08), 0 40px 80px -30px rgba(74,25,66,.40);
+    transform-origin: 50% 40%;
+  }
+  #vp { position: absolute; left: 0; top: 0; width: 720px; height: 870px; transform: scale(1.33333); transform-origin: 0 0; }
+  .chrome {
+    position: absolute; left: 0; top: 0; width: 720px; height: 40px; background: #f2f1f5;
+    border-bottom: 1px solid rgba(0,0,0,.07); display: flex; align-items: center; padding: 0 14px; gap: 14px;
+  }
+  .lights { display: flex; gap: 7px; }
+  .lights i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+  .lights i:nth-child(1) { background: #ff5f57; }
+  .lights i:nth-child(2) { background: #febc2e; }
+  .lights i:nth-child(3) { background: #28c840; }
+  .url {
+    flex: 1; height: 24px; margin: 0 40px; border-radius: 7px; background: #e6e4ea;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    font: 500 12px var(--text); color: #6e6e73;
+  }
+  .url svg { width: 10px; height: 10px; }
+  #ext { width: 24px; height: 24px; border-radius: 6px; position: relative; }
+  #ext svg { width: 24px; height: 24px; display: block; }
+  #extRing { position: absolute; inset: -3px; border-radius: 9px; border: 2px solid var(--brand-pink); opacity: 0; }
+
+  #pg { position: absolute; left: 0; top: 40px; width: 720px; height: 830px; overflow: hidden; }
+
+  /* the fictional page */
+  .site { position: absolute; left: 0; top: 0; width: 720px; height: 830px; background: #fff; font-family: "Inter", system-ui, sans-serif; color: #16202c; overflow: hidden; }
+  .site .sec { position: absolute; left: 0; width: 720px; }
+  .nav { top: 0; height: 56px; background: #12263f; display: flex; align-items: center; gap: 22px; padding: 0 28px; }
+  .nav b { color: #fff; font-size: 18px; font-weight: 700; letter-spacing: -.01em; margin-right: 6px; }
+  .nav span { color: #b9cbe4; font-size: 13px; }
+  .nav i { margin-left: auto; font-style: normal; font-size: 12px; font-weight: 600; color: #12263f; background: #fff; border-radius: 7px; padding: 6px 12px; }
+  .hero { top: 56px; height: 290px; background: #eef2f7; }
+  .hero h1 { position: absolute; left: 28px; top: 34px; font-size: 31px; line-height: 1.15; font-weight: 700; letter-spacing: -.025em; }
+  .hero p { position: absolute; left: 28px; top: 120px; width: 370px; font-size: 14px; line-height: 1.5; color: #5a6b80; }
+  .hero .btn { position: absolute; left: 28px; top: 196px; font-size: 13px; font-weight: 600; color: #fff; background: #12263f; border-radius: 8px; padding: 10px 18px; }
+  .art { position: absolute; left: 442px; top: 40px; width: 250px; height: 210px; border-radius: 14px; background: #ff5a6e; overflow: hidden; }
+  .art i { position: absolute; border-radius: 50%; display: block; }
+  .art .a1 { width: 150px; height: 150px; background: #ff7d8d; }
+  .art .a2 { width: 70px; height: 70px; background: #ffb3bd; }
+  .art .a3 { width: 46px; height: 46px; background: #ffd6db; }
+  .cards { top: 346px; height: 160px; display: flex; gap: 16px; padding: 20px 28px; }
+  .card { flex: 1; border: 1px solid #dfe6ef; border-radius: 12px; padding: 16px; background: #fafcff; }
+  .card h3 { font-size: 14px; font-weight: 700; margin-bottom: 8px; }
+  .card p { font-size: 12px; line-height: 1.5; color: #5a6b80; }
+  .contact { top: 506px; height: 170px; padding: 18px 28px; }
+  .contact h3 { font-size: 16px; font-weight: 700; margin-bottom: 12px; }
+  .contact .row { display: flex; gap: 18px; font-size: 14px; height: 32px; align-items: center; }
+  .contact .k { width: 56px; color: #8a97a8; font-size: 13px; }
+  .contact .v { font-weight: 500; }
+  .foot { top: 676px; height: 154px; background: #0b1622; display: flex; gap: 60px; padding: 26px 28px; }
+  .foot div { display: flex; flex-direction: column; gap: 10px; }
+  .foot b { color: #fff; font-size: 13px; }
+  .foot span { color: #8fa3bd; font-size: 12px; }
+
+  /* annotations: live inside .site so the lifted copy carries them */
+  .ann { position: absolute; left: 0; top: 0; width: 720px; height: 830px; overflow: visible; pointer-events: none; }
+  .hlr { position: absolute; background: rgba(255, 204, 0, .5); mix-blend-mode: multiply; border-radius: 3px; width: 0; }
+  .txt { position: absolute; left: 196px; top: 302px; font: 700 17px "Inter", sans-serif; color: #ff3b30; white-space: pre; letter-spacing: -.01em; }
+  .txt i { display: inline-block; width: 2px; height: 19px; background: #ff3b30; vertical-align: -3px; margin-left: 1px; }
+  .blr { position: absolute; width: 0; backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px); background: rgba(255,255,255,.12); border-radius: 4px; }
+
+  /* the overlay: NhakoCapture's own HUD */
+  #ov { position: absolute; inset: 0; }
+  #sel { position: absolute; box-shadow: 0 0 0 2000px rgba(20, 10, 24, .48); }
+  #selB { position: absolute; inset: -1px; border: 1px solid rgba(255,255,255,.95); }
+  #selB::after { content: ""; position: absolute; inset: 1px; border: 2px solid var(--brand-pink); }
+  .hd { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; border: 2px solid var(--brand-pink); }
+  #size { position: absolute; font: 600 11px var(--text); color: #fff; background: rgba(29,22,32,.92); border-radius: 6px; padding: 3px 7px; letter-spacing: .01em; white-space: nowrap; }
+  #flash { position: absolute; background: #fff; opacity: 0; }
+  .glassbar {
+    position: absolute; display: flex; align-items: center; gap: 2px; padding: 5px;
+    background: var(--glass); border-radius: 12px; color: var(--hud-text); font: 500 12px var(--text);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 .5px rgba(0,0,0,.6), 0 18px 44px -10px rgba(0,0,0,.55);
+    white-space: nowrap;
+  }
+  .glassbar svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .glassbar .sep { width: 1px; height: 18px; background: rgba(255,255,255,.12); margin: 0 5px; }
+  #cmd { top: 12px; left: 360px; }
+  #cmd .b { display: flex; align-items: center; gap: 6px; padding: 6px 9px; border-radius: 8px; }
+  #cmd .hint { color: var(--hud-muted); font-weight: 400; display: flex; align-items: center; gap: 7px; padding: 0 6px 0 4px; }
+  #cmd .hint svg { width: 18px; height: 18px; stroke: none; }
+  #tb { left: 360px; }
+  #tb .t { width: 29px; height: 29px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--hud-text); }
+  #tb .t.on { background: rgba(255,145,231,.16); color: var(--brand-pink); box-shadow: inset 0 0 0 1px rgba(255,145,231,.5); }
+  #tb .sw { width: 15px; height: 15px; border-radius: 50%; margin: 0 2.5px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.18); }
+  #tb .sw.on { box-shadow: 0 0 0 2px #1d1620, 0 0 0 3.5px #fff; }
+  #tb .wt { width: 22px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: 7px; }
+  #tb .wt i { display: block; border-radius: 50%; background: var(--hud-text); }
+  #tb .wt.on { background: rgba(255,145,231,.16); }
+  #tb .wt.on i { background: var(--brand-pink); }
+  #tb .ghost { color: rgba(247,241,249,.5); }
+  #tb .copy { display: flex; align-items: center; gap: 5px; height: 29px; padding: 0 11px; margin-left: 4px; border-radius: 15px; background: var(--brand-pink); color: var(--plum-ink); font-weight: 600; }
+  #tb .save { display: flex; align-items: center; gap: 5px; height: 29px; padding: 0 9px; color: var(--hud-text); font-weight: 500; }
+
+  #cursor { position: absolute; left: 0; top: 0; width: 22px; height: 30px; z-index: 9; transform-origin: 3px 2px; }
+  #cursor svg { width: 100%; height: 100%; display: block; overflow: visible; }
+
+  #hotkey { position: absolute; left: 0; right: 0; top: 1430px; display: flex; justify-content: center; }
+  #hotkey .glassbar { position: relative; gap: 10px; padding: 14px 18px; border-radius: 22px; font-size: 30px; }
+  #hotkey .k { min-width: 64px; height: 60px; padding: 0 16px; border-radius: 13px; background: rgba(255,255,255,.1); display: flex; align-items: center; justify-content: center; font: 500 30px var(--text); }
+
+  #card { position: absolute; left: 92px; top: 608px; width: 896px; height: 722.67px; overflow: hidden; display: none; background: #fff; transform-origin: 50% 50%; }
+  #cardvp { position: absolute; left: -32px; top: -114.67px; width: 720px; height: 830px; transform: scale(1.33333); transform-origin: 0 0; }
+  #copied { position: absolute; left: 0; right: 0; top: 1300px; display: flex; justify-content: center; }
+  #copied div { display: flex; align-items: center; gap: 18px; height: 96px; padding: 0 40px 0 22px; border-radius: 48px; background: var(--ink); color: #fff; font: 500 38px var(--text); letter-spacing: -.01em; }
+  .tick { width: 56px; height: 56px; border-radius: 50%; background: var(--brand-pink); display: flex; align-items: center; justify-content: center; flex: none; }
+  .tick svg { width: 30px; height: 30px; fill: none; stroke: var(--plum-ink); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ---------- 5. whole page ---------- */
+  #tall { position: absolute; left: 210px; top: 500px; width: 660px; height: 1040px; border-radius: 30px; overflow: hidden; background: #f1eff4; box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.06); }
+  #strip { position: absolute; left: 30px; top: 0; width: 600px; height: 3420px; transform-origin: 300px 0; background: #fff; box-shadow: 0 0 0 1.5px rgba(0,0,0,.08), 0 30px 60px -20px rgba(74,25,66,.35); }
+  .ts { position: absolute; left: 0; width: 600px; height: 380px; overflow: hidden; font-family: "Inter", sans-serif; }
+  .bar { position: absolute; border-radius: 6px; background: #dfe4ec; }
+  #frame5 { position: absolute; left: -2px; width: 604px; height: 384px; border: 2px solid #fff; }
+  #frame5::after { content: ""; position: absolute; inset: 0; border: 4px solid var(--brand-pink); }
+  #badge5 { position: absolute; left: 0; right: 0; top: 392px; display: flex; justify-content: center; }
+  #badge5 > div { display: flex; align-items: center; gap: 16px; font: 500 30px var(--text); color: var(--muted); }
+  #badge5 .ico { position: relative; width: 78px; height: 78px; }
+  #badge5 .ico svg { width: 78px; height: 78px; display: block; }
+  #badge5 .num { position: absolute; left: 52px; top: -14px; height: 42px; min-width: 42px; padding: 0 12px; border-radius: 21px; background: var(--brand-pink); color: var(--plum-ink); font: 700 25px var(--text); box-shadow: 0 0 0 4px var(--bg); display: flex; align-items: center; justify-content: center; }
+  #dims5 { position: absolute; left: 0; right: 0; top: 1570px; display: flex; justify-content: center; }
+  #dims5 div { height: 76px; padding: 0 30px; border-radius: 38px; background: var(--ink); color: #fff; font: 600 32px var(--text); display: flex; align-items: center; letter-spacing: .01em; }
+
+  /* ---------- 6. private ---------- */
+  #head6 { top: 470px; }
+  #head6 .line { font-size: 128px; line-height: 1; font-weight: 700; letter-spacing: -.05em; }
+  #rows6 { position: absolute; left: 50%; transform: translateX(-50%); top: 900px; display: flex; flex-direction: column; gap: 34px; }
+  .row6 { display: flex; align-items: center; gap: 30px; font-size: 64px; font-weight: 600; letter-spacing: -.035em; }
+  .row6 .tick { width: 72px; height: 72px; }
+  .row6 .tick svg { width: 38px; height: 38px; }
+  #free6 { top: 1330px; font-size: 96px; font-weight: 700; letter-spacing: -.045em; color: var(--pink); }
+
+  /* ---------- 7. end card ---------- */
+  #logo7 { position: absolute; left: 540px; top: 520px; width: 270px; height: 270px; }
+  #word7 { top: 720px; font-size: 118px; font-weight: 700; letter-spacing: -.045em; }
+  #tag7 { top: 872px; font-size: 44px; color: var(--muted); letter-spacing: -.015em; line-height: 1.25; }
+  #avail7 { top: 1040px; font-size: 36px; color: var(--muted); letter-spacing: -.01em; }
+  #avail7 b { color: var(--ink); font-weight: 600; }
+  #cta7 { position: absolute; left: 0; right: 0; top: 1110px; display: flex; justify-content: center; }
+  #cta7 div { height: 128px; padding: 0 64px; border-radius: 64px; background: var(--ink); color: #fff; font: 500 50px var(--display); letter-spacing: -.02em; display: flex; align-items: center; box-shadow: 0 20px 40px -16px rgba(29,29,31,.5); }
+  #works7 { top: 1278px; font-size: 32px; color: var(--muted); }
+  #family7 { top: 1440px; }
+  #family7 .lab { font-size: 26px; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; font-weight: 500; }
+  #family7 .names { margin-top: 18px; font-size: 36px; font-weight: 600; letter-spacing: -.02em; display: flex; justify-content: center; gap: 22px; align-items: center; }
+  #family7 .names i { width: 8px; height: 8px; border-radius: 50%; background: var(--lav); display: block; }
+  #family7 .names .me { color: var(--pink); }
+  .fly { position: absolute; width: 120px; height: 88px; left: 0; top: 0; }
+  .fly svg { width: 100%; height: 100%; display: block; overflow: visible; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <!-- The family butterfly, flat. Mid-tones of the master's wing gradients. -->
+    <g id="wingL" stroke="#4a1942" stroke-width="22" stroke-linejoin="round">
+      <path d="M530 522C556 432 630 350 694 356C756 362 760 444 712 494C674 534 602 544 532 540Z" fill="#f78cc8"/>
+      <path d="M530 552C598 552 656 580 660 628C664 676 616 700 580 680C546 660 530 612 530 552Z" fill="#b89cf3"/>
+      <circle cx="668" cy="420" r="21" fill="#fff" stroke="none"/>
+      <circle cx="616" cy="638" r="14" fill="#fff" stroke="none"/>
+      <path d="M518 446C522 408 534 382 556 366" fill="none" stroke-linecap="round" stroke-width="16"/>
+      <circle cx="560" cy="362" r="13" fill="#4a1942" stroke="none"/>
+    </g>
+    <symbol id="bfly" viewBox="250 330 524 380">
+      <g class="wr"><use href="#wingL"/></g>
+      <g class="wl"><use href="#wingL" transform="translate(1024 0) scale(-1 1)"/></g>
+      <rect x="494" y="438" width="36" height="236" rx="18" fill="#4a1942"/>
+    </symbol>
+    <symbol id="tinyfly" viewBox="0 0 24 24">
+      <path d="M11.4 11.2C10.9 8.4 8.8 5.6 6.2 5.8 3.8 6 3.6 9.2 5.6 11 7 12.2 9.4 12.4 11.4 12.2Z" fill="#ff91e7"/>
+      <path d="M12.6 11.2C13.1 8.4 15.2 5.6 17.8 5.8 20.2 6 20.4 9.2 18.4 11 17 12.2 14.6 12.4 12.6 12.2Z" fill="#ff91e7"/>
+      <path d="M11.4 13C9.2 13 7.2 14 7.1 15.8 7 17.5 8.7 18.3 10 17.5 11.1 16.8 11.4 15.2 11.4 13Z" fill="#c3a6f0"/>
+      <path d="M12.6 13C14.8 13 16.8 14 16.9 15.8 17 17.5 15.3 18.3 14 17.5 12.9 16.8 12.6 15.2 12.6 13Z" fill="#c3a6f0"/>
+      <rect x="11.25" y="8.6" width="1.5" height="9.4" rx=".75" fill="#f7f1f9"/>
+    </symbol>
+    <symbol id="appicon" viewBox="0 0 1024 1024">
+      <path d="M324 0H700C940 0 1024 84 1024 324V700C1024 940 940 1024 700 1024H324C84 1024 0 940 0 700V324C0 84 84 0 324 0Z" fill="#f9dcef"/>
+      <g fill="none" stroke="#4a1942" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M196 356V262a66 66 0 0 1 66-66h94"/><path d="M668 196h94a66 66 0 0 1 66 66v94"/>
+        <path d="M828 668v94a66 66 0 0 1-66 66h-94"/><path d="M356 828h-94a66 66 0 0 1-66-66v-94"/>
+      </g>
+      <use href="#wingL"/><use href="#wingL" transform="translate(1024 0) scale(-1 1)"/>
+      <rect x="494" y="438" width="36" height="236" rx="18" fill="#4a1942"/>
+    </symbol>
+  </defs>
+</svg>
+
+<template id="logoTpl">
+  <svg viewBox="0 0 1024 1024">
+    <g class="lg-tile">
+      <path d="M324 0H700C940 0 1024 84 1024 324V700C1024 940 940 1024 700 1024H324C84 1024 0 940 0 700V324C0 84 84 0 324 0Z" fill="#f9dcef"/>
+      <clipPath id="__ID__clip"><path d="M324 0H700C940 0 1024 84 1024 324V700C1024 940 940 1024 700 1024H324C84 1024 0 940 0 700V324C0 84 84 0 324 0Z"/></clipPath>
+      <g clip-path="url(#__ID__clip)"><g transform="rotate(42 868 156)">
+        <rect x="708" y="120" width="320" height="72" fill="#f49ac1"/>
+        <path d="M740 120h32v72h-32zM804 120h32v72h-32zM868 120h32v72h-32zM932 120h32v72h-32zM996 120h32v72h-32z" fill="#c3a6f0"/>
+      </g></g>
+    </g>
+    <g fill="none" stroke="#4a1942" stroke-width="58" stroke-linecap="round" stroke-linejoin="round">
+      <path class="lg-c" d="M196 356V262a66 66 0 0 1 66-66h94"/>
+      <path class="lg-c" d="M668 196h94a66 66 0 0 1 66 66v94"/>
+      <path class="lg-c" d="M828 668v94a66 66 0 0 1-66 66h-94"/>
+      <path class="lg-c" d="M356 828h-94a66 66 0 0 1-66-66v-94"/>
+    </g>
+    <g class="lg-fly">
+      <g class="lg-wr"><use href="#wingL"/></g>
+      <g class="lg-wl"><use href="#wingL" transform="translate(1024 0) scale(-1 1)"/></g>
+      <rect x="494" y="438" width="36" height="236" rx="18" fill="#4a1942"/>
+    </g>
+    <path class="lg-glint" d="M790 404l12 30 30 12-30 12-12 30-12-30-30-12 30-12z" fill="#fff"/>
+  </svg>
+</template>
+
+<!-- The fictional page. Instantiated twice: in the browser window, and in the
+     lifted copy that becomes "your screenshot". -->
+<template id="siteTpl">
+  <div class="site">
+    <div class="sec nav"><b>Meridian</b><span>Product</span><span>Docs</span><span>Pricing</span><i>Sign in</i></div>
+    <div class="sec hero">
+      <h1><span class="hl1">Ship the thing you</span><br>keep putting off.</h1>
+      <p>A calm place to plan, build and hand over work, without another dashboard to check every morning.</p>
+      <span class="btn">Start free</span>
+      <div class="art"><i class="a1"></i><i class="a2"></i><i class="a3"></i></div>
+    </div>
+    <div class="sec cards">
+      <div class="card"><h3>Plan</h3><p>Break a brief into slices you can finish in one sitting.</p></div>
+      <div class="card"><h3>Build</h3><p>Every change checked against the brief, not just the diff.</p></div>
+      <div class="card"><h3>Hand over</h3><p>Close the gap between one session and the next.</p></div>
+    </div>
+    <div class="sec contact">
+      <h3>Talk to a person</h3>
+      <div class="row"><span class="k">Email</span><span class="v em">maya.rivera@meridian.example</span></div>
+      <div class="row"><span class="k">Phone</span><span class="v ph">+1 415 555 0142</span></div>
+    </div>
+    <div class="sec foot">
+      <div><b>Meridian</b><span>A fictional site for this film</span></div>
+      <div><b>Product</b><span>Planning</span><span>Reviews</span></div>
+      <div><b>Company</b><span>About</span><span>Careers</span></div>
+    </div>
+    <div class="hlr"></div>
+    <div class="blr b1"></div><div class="blr b2"></div>
+    <svg class="ann" viewBox="0 0 720 830">
+      <path class="ar-l" d="" fill="none" stroke="#ff3b30" stroke-width="4.5" stroke-linecap="round"/>
+      <path class="ar-h" d="" fill="#ff3b30" stroke="#ff3b30" stroke-width="2" stroke-linejoin="round"/>
+    </svg>
+    <div class="txt"><span class="tx"></span><i class="caret"></i></div>
+  </div>
+</template>
+
+<div id="stage">
+
+  <!-- 1. logo -->
+  <section class="layer" id="L1">
+    <div id="logo1"></div>
+    <div class="center" id="word1"><span class="line"><span>NhakoCapture</span></span></div>
+  </section>
+
+  <!-- 2. headline -->
+  <section class="layer" id="L2">
+    <div class="center" id="head2">
+      <span class="line"><span>Screenshot</span></span>
+      <span class="line"><span>anything.</span></span>
+      <span class="line pink"><span>Never leave</span></span>
+      <span class="line pink"><span>the tab.</span></span>
+    </div>
+  </section>
+
+  <!-- 3. shortcut -->
+  <section class="layer" id="L3">
+    <div class="center" id="title3"><span class="line"><span>One shortcut.</span></span></div>
+    <div id="keys3"><div class="cap">Ctrl</div><div class="cap">⇧</div><div class="cap">5</div></div>
+    <div class="center" id="sub3">or <b>⌘ ⇧ 2</b> on a Mac</div>
+  </section>
+
+  <!-- 4. demo -->
+  <section class="layer" id="L4">
+    <div class="cap4"><h2>The page holds still.</h2><p>Our buttons never end up in your shot.</p></div>
+    <div class="cap4"><h2>Drag to frame.</h2><p>Fine tune it with eight handles.</p></div>
+    <div class="cap4"><h2>Mark it up right there.</h2><p>Arrow, highlighter, pen and text.</p></div>
+    <div class="cap4"><h2>Blur that really hides.</h2><p>Nobody can unblur the file you share.</p></div>
+    <div class="cap4"><h2>Copy. Paste. Done.</h2><p>Straight to your clipboard, ready to paste.</p></div>
+
+    <div id="win">
+      <div id="vp">
+        <div class="chrome">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="url"><svg viewBox="0 0 12 12"><path d="M3.5 5.5V4a2.5 2.5 0 0 1 5 0v1.5M2.5 5.5h7v5h-7z" fill="none" stroke="#8e8e93" stroke-width="1.2"/></svg>meridian.example</div>
+          <div id="ext"><svg><use href="#appicon"/></svg><i id="extRing"></i></div>
+        </div>
+        <div id="pg">
+          <div id="siteA"></div>
+          <div id="ov">
+            <div id="sel"><div id="selB"></div></div>
+            <div id="flash"></div>
+            <div class="hd"></div><div class="hd"></div><div class="hd"></div><div class="hd"></div>
+            <div class="hd"></div><div class="hd"></div><div class="hd"></div><div class="hd"></div>
+            <div id="size">1344 × 1084</div>
+            <div class="glassbar" id="cmd">
+              <span class="hint"><svg><use href="#tinyfly"/></svg>Drag to frame</span><i class="sep"></i>
+              <span class="b"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>Visible area</span>
+              <span class="b"><svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M3 11h18"/><path d="M12 14v6"/><path d="m9 17 3 3 3-3"/></svg>Whole page</span>
+              <span class="b"><svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/></svg>Save as PDF</span>
+              <i class="sep"></i>
+              <span class="b"><svg viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></span>
+            </div>
+            <div class="glassbar" id="tb">
+              <b class="t" data-tool="pen"><svg viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></b>
+              <b class="t" data-tool="arrow"><svg viewBox="0 0 24 24"><path d="M7 17 17 7"/><path d="M8 7h9v9"/></svg></b>
+              <b class="t" data-tool="blur"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 12h16M12 4v16"/></svg></b>
+              <b class="t" data-tool="hl"><svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg></b>
+              <b class="t" data-tool="text"><svg viewBox="0 0 24 24"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></b>
+              <b class="t" data-tool="zoom"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/><path d="M11 8v6M8 11h6"/></svg></b>
+              <i class="sep"></i>
+              <i class="sw" data-ink="red" style="background:#ff3b30"></i><i class="sw" data-ink="amber" style="background:#ffcc00"></i>
+              <i class="sw" style="background:#34c759"></i><i class="sw" style="background:#0a84ff"></i>
+              <i class="sw" style="background:#ff5fb8"></i><i class="sw" style="background:#fff"></i><i class="sw" style="background:#1c1c1e"></i>
+              <i class="sep"></i>
+              <b class="wt"><i style="width:4px;height:4px"></i></b><b class="wt on"><i style="width:7px;height:7px"></i></b><b class="wt"><i style="width:10px;height:10px"></i></b>
+              <i class="sep"></i>
+              <b class="t ghost"><svg viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-15-6.7L3 13"/></svg></b>
+              <b class="t ghost"><svg viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M3 17a9 9 0 0 1 15-6.7L21 13"/></svg></b>
+              <b class="copy"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>Copy</b>
+              <b class="save"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></svg>Save</b>
+            </div>
+          </div>
+          <div id="cursor"><svg viewBox="0 0 22 30"><path d="M2 2v22l5.6-5.2 3.8 8.6 3.8-1.6-3.7-8.4h7.8z" fill="#111" stroke="#fff" stroke-width="1.7" stroke-linejoin="round"/></svg></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hotkey"><div class="glassbar"><span class="k">Ctrl</span><span class="k">⇧</span><span class="k">5</span></div></div>
+
+    <div id="card"><div id="cardvp"><div id="siteB"></div></div></div>
+    <div id="copied"><div><span class="tick"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>Copied to clipboard</div></div>
+  </section>
+
+  <!-- 5. whole page -->
+  <section class="layer" id="L5">
+    <div class="cap4"><h2>The whole page, too.</h2><p>Scrolled and stitched into one image.</p></div>
+    <div id="badge5"><div><span class="ico"><svg><use href="#appicon"/></svg><span class="num">1/9</span></span></div></div>
+    <div id="tall"><div id="strip"><div id="frame5"></div></div></div>
+    <div id="dims5"><div>2560 × 14400</div></div>
+  </section>
+
+  <!-- 6. private -->
+  <section class="layer" id="L6">
+    <div class="center" id="head6">
+      <span class="line"><span>Nothing leaves</span></span>
+      <span class="line pink"><span>your computer.</span></span>
+    </div>
+    <div id="rows6">
+      <div class="row6"><span class="tick"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>No uploads.</div>
+      <div class="row6"><span class="tick"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>No account.</div>
+      <div class="row6"><span class="tick"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></span>No tracking.</div>
+    </div>
+    <div class="center" id="free6"><span class="line"><span>And it’s free.</span></span></div>
+  </section>
+
+  <!-- 7. end card -->
+  <section class="layer" id="L7">
+    <div class="fly"><svg><use href="#bfly"/></svg></div>
+    <div class="fly"><svg><use href="#bfly"/></svg></div>
+    <div class="fly"><svg><use href="#bfly"/></svg></div>
+    <div class="fly"><svg><use href="#bfly"/></svg></div>
+    <div id="logo7"></div>
+    <div class="center" id="word7"><span class="line"><span>NhakoCapture</span></span></div>
+    <div class="center" id="tag7">Screenshot anything. Never leave the tab.</div>
+    <div class="center" id="avail7">Available now on the <b>Chrome Web Store</b></div>
+    <div id="cta7"><div>Add to Chrome. It’s free.</div></div>
+    <div class="center" id="works7">Works in Chrome, Brave and Edge.</div>
+    <div class="center" id="family7">
+      <div class="lab">The Nhako family</div>
+      <div class="names"><span>Nhako Tools</span><i></i><span>NhakoSearch</span><i></i><span class="me">NhakoCapture</span></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const DURATION = 36.5;
+
+  /* ---------- easing ---------- */
+  const C = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
+  const P = (t, a, d) => C((t - a) / d);
+  const eOut = (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+  const eIn = (x) => x * x * x;
+  const eIO = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+  const spring = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : 1 - Math.exp(-8 * x) * Math.cos(8.6 * x));
+  const lerp = (a, b, x) => a + (b - a) * x;
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+
+  function show(el, t, a, b) {
+    const on = t >= a && t < b;
+    el.style.display = on ? 'block' : 'none';
+    return on;
+  }
+  /* A masked line rising into place. */
+  function rise(span, t, a, d = 0.8) {
+    const p = eOut(P(t, a, d));
+    span.style.transform = `translateY(${(1 - p) * 105}%)`;
+  }
+  function fadeUp(el, t, a, d = 0.7, dist = 40) {
+    const p = eOut(P(t, a, d));
+    el.style.opacity = C(P(t, a, d * 0.6));
+    el.style.transform = `translateY(${(1 - p) * dist}px)`;
+  }
+
+  /* ---------- build ---------- */
+  function mountLogo(host, id) {
+    host.innerHTML = $('#logoTpl').innerHTML.replaceAll('__ID__', id);
+    return {
+      root: host,
+      tile: $('.lg-tile', host), corners: $$('.lg-c', host), fly: $('.lg-fly', host),
+      wr: $('.lg-wr', host), wl: $('.lg-wl', host), glint: $('.lg-glint', host),
+    };
+  }
+  const logo1 = mountLogo($('#logo1'), 'a');
+  const logo7 = mountLogo($('#logo7'), 'b');
+  $('#siteA').innerHTML = $('#siteTpl').innerHTML;
+  $('#siteB').innerHTML = $('#siteTpl').innerHTML;
+
+  // The tall page for the whole-page scene: nine screens, flat colours.
+  const SECS = [
+    `<div class="bar" style="left:0;top:0;width:600px;height:44px;border-radius:0;background:#12263f"></div>
+     <div class="bar" style="left:22px;top:15px;width:80px;height:14px;background:#fff"></div>
+     <div class="bar" style="left:0;top:44px;width:600px;height:336px;border-radius:0;background:#eef2f7"></div>
+     <div class="bar" style="left:28px;top:84px;width:250px;height:24px;background:#16202c"></div>
+     <div class="bar" style="left:28px;top:118px;width:200px;height:24px;background:#16202c"></div>
+     <div class="bar" style="left:28px;top:164px;width:240px;height:10px"></div>
+     <div class="bar" style="left:28px;top:182px;width:210px;height:10px"></div>
+     <div class="bar" style="left:28px;top:216px;width:96px;height:34px;border-radius:8px;background:#12263f"></div>
+     <div class="bar" style="left:330px;top:76px;width:240px;height:200px;border-radius:14px;background:#ff5a6e"></div>
+     <div class="bar" style="left:430px;top:90px;width:120px;height:120px;border-radius:50%;background:#ff7d8d"></div>`,
+    lines(10),
+    `<div class="bar" style="left:28px;top:30px;width:544px;height:320px;border-radius:16px;background:#c3a6f0"></div>
+     <div class="bar" style="left:330px;top:70px;width:160px;height:160px;border-radius:50%;background:#d8c6f6"></div>
+     <div class="bar" style="left:90px;top:220px;width:100px;height:100px;border-radius:50%;background:#e6dafa"></div>`,
+    `<div class="bar" style="left:28px;top:40px;width:250px;height:24px;background:#16202c"></div>` + lines(6, 84, 250) +
+     `<div class="bar" style="left:320px;top:40px;width:252px;height:300px;border-radius:16px;background:#ff91e7"></div>`,
+    `<div class="bar" style="left:60px;top:90px;width:480px;height:30px;background:#16202c"></div>
+     <div class="bar" style="left:100px;top:136px;width:400px;height:30px;background:#16202c"></div>
+     <div class="bar" style="left:220px;top:210px;width:160px;height:12px"></div>`,
+    [0, 1, 2, 3].map((i) => `<div class="bar" style="left:${28 + (i % 2) * 282}px;top:${30 + Math.floor(i / 2) * 170}px;width:262px;height:150px;border-radius:12px;background:#f6f8fb;box-shadow:inset 0 0 0 1px #dfe6ef"></div>
+      <div class="bar" style="left:${48 + (i % 2) * 282}px;top:${54 + Math.floor(i / 2) * 170}px;width:110px;height:14px;background:#16202c"></div>
+      <div class="bar" style="left:${48 + (i % 2) * 282}px;top:${84 + Math.floor(i / 2) * 170}px;width:200px;height:9px"></div>
+      <div class="bar" style="left:${48 + (i % 2) * 282}px;top:${102 + Math.floor(i / 2) * 170}px;width:170px;height:9px"></div>`).join(''),
+    `<div class="bar" style="left:28px;top:36px;width:220px;height:20px;background:#16202c"></div>` +
+      [150, 220, 120, 260, 190, 240, 170].map((h, i) => `<div class="bar" style="left:${40 + i * 76}px;top:${340 - h}px;width:52px;height:${h}px;border-radius:8px;background:${i === 3 ? '#ff5a6e' : '#12263f'}"></div>`).join(''),
+    lines(10),
+    `<div class="bar" style="left:0;top:0;width:600px;height:380px;border-radius:0;background:#0b1622"></div>
+     <div class="bar" style="left:28px;top:40px;width:120px;height:16px;background:#fff"></div>` +
+      [0, 1, 2].map((c) => [0, 1, 2].map((r) => `<div class="bar" style="left:${28 + c * 190}px;top:${90 + r * 30}px;width:${110 - r * 14}px;height:10px;background:#3a4b62"></div>`).join('')).join(''),
+  ];
+  function lines(n, top = 40, w = 544) {
+    let h = `<div class="bar" style="left:28px;top:${top}px;width:${Math.min(w, 300)}px;height:22px;background:#16202c"></div>`;
+    for (let i = 0; i < n; i++) {
+      const lw = (i % 4 === 3 ? 0.62 : 1 - (i % 3) * 0.06) * w;
+      h += `<div class="bar" style="left:28px;top:${top + 46 + i * 26}px;width:${lw}px;height:10px"></div>`;
+    }
+    return h;
+  }
+  const strip = $('#strip');
+  SECS.forEach((html, i) => {
+    const d = document.createElement('div');
+    d.className = 'ts'; d.style.top = `${i * 380}px`; d.innerHTML = html;
+    strip.insertBefore(d, $('#frame5'));
+  });
+  const secs = $$('.ts');
+
+  /* ---------- measure the demo page once (virtual px, page coords) ---------- */
+  const SCALE = 4 / 3;
+  const pg = $('#pg');
+  let M = null;
+  function measure() {
+    // Measure in a clean state: scene visible, nothing transformed, the tool
+    // bar parked at the page origin so its buttons come out relative to it.
+    $('#L4').style.display = 'block';
+    $('#ov').style.display = 'block';
+    const tbEl = $('#tb'), cmdEl = $('#cmd');
+    for (const el of [tbEl, cmdEl]) { el.style.left = '0px'; el.style.top = '0px'; el.style.transform = 'none'; }
+    const base = pg.getBoundingClientRect();
+    const r = (el) => {
+      const b = el.getBoundingClientRect();
+      return { x: (b.left - base.left) / SCALE, y: (b.top - base.top) / SCALE, w: b.width / SCALE, h: b.height / SCALE };
+    };
+    const c = (el) => { const b = r(el); return [b.x + b.w / 2, b.y + b.h / 2]; };
+    const tbW = r(tbEl).w, cmdW = r(cmdEl).w;
+    const tbX = 360 - tbW / 2;   // where the bar sits once placed (centred under the frame)
+    const at = (el) => { const [x, y] = c(el); return [x + tbX, y + TB_TOP]; };
+    M = {
+      hl1: r($('#siteA .hl1')),
+      em: r($('#siteA .em')),
+      ph: r($('#siteA .ph')),
+      tool: Object.fromEntries($$('#tb .t[data-tool]').map((b) => [b.dataset.tool, at(b)])),
+      copy: at($('#tb .copy')),
+      tbW, cmdW,
+    };
+    tbEl.style.left = cmdEl.style.left = '360px';
+    tbEl.style.top = cmdEl.style.top = '';
+    $('#L4').style.display = 'none';
+  }
+
+  /* selection, in page coords */
+  const S0 = [24, 86], S1 = [696, 628];
+  const TB_TOP = 640;
+  const TAIL = [324, 312], HEAD = [446, 236];
+
+  function toolAt(t) {
+    if (t < 15.0) return 'pen';
+    if (t < 16.4) return 'arrow';
+    if (t < 17.55) return 'hl';
+    if (t < 18.8) return 'text';
+    return 'blur';
+  }
+
+  /* Cursor path: [time, x, y] keys eased between, plus the drags. */
+  function cursorAt(t) {
+    const tb = (k) => M.tool[k];
+    const hlA = [M.hl1.x - 4, M.hl1.y + M.hl1.h / 2];
+    const hlB = [M.hl1.x + M.hl1.w + 6, M.hl1.y + M.hl1.h / 2];
+    const emA = [M.em.x - 6, M.em.y + M.em.h / 2], emB = [M.em.x + M.em.w + 6, emA[1]];
+    const phA = [M.ph.x - 6, M.ph.y + M.ph.h / 2], phB = [M.ph.x + M.ph.w + 6, phA[1]];
+    const K = [
+      [11.9, 560, 760], [12.45, ...S0], [12.55, ...S0], ['drag', 12.55, 13.65, S0, S1],
+      [14.6, ...S1], [15.0, ...tb('arrow')], [15.1, ...tb('arrow')], [15.35, ...TAIL],
+      ['drag', 15.4, 15.95, TAIL, HEAD], [16.05, ...HEAD], [16.4, ...tb('hl')], [16.45, ...tb('hl')],
+      [16.68, ...hlA], ['drag', 16.7, 17.2, hlA, hlB], [17.25, ...hlB], [17.55, ...tb('text')],
+      [17.6, ...tb('text')], [17.82, 200, 314], [18.4, 200, 314], [18.5, 230, 370], [18.8, ...tb('blur')],
+      [18.85, ...tb('blur')], [19.08, ...emA], ['drag', 19.1, 19.55, emA, emB], [19.6, ...emB], [19.72, ...phA],
+      ['drag', 19.75, 20.15, phA, phB], [20.25, ...phB], [20.7, M.copy[0] + 4, M.copy[1] + 2],
+    ];
+    // expand drags into keys at their ends; drags interpolate linearly-eased
+    let prev = null;
+    for (let i = 0; i < K.length; i++) {
+      const k = K[i];
+      if (k[0] === 'drag') {
+        const [, a, b, A, B] = k;
+        if (t < a) return prev ? between(prev, [a, ...A], t) : A;
+        if (t <= b) { const p = eIO(P(t, a, b - a)); return [lerp(A[0], B[0], p), lerp(A[1], B[1], p)]; }
+        prev = [b, ...B];
+        continue;
+      }
+      if (t < k[0]) return prev ? between(prev, k, t) : [k[1], k[2]];
+      prev = k;
+    }
+    return [prev[1], prev[2]];
+  }
+  function between(a, b, t) {
+    const p = eIO(P(t, a[0], b[0] - a[0]));
+    return [lerp(a[1], b[1], p), lerp(a[2], b[2], p)];
+  }
+  const CLICKS = [15.0, 16.4, 17.55, 17.85, 18.8, 20.75];
+  const PRESSES = [[12.55, 13.65], [15.4, 15.95], [16.7, 17.2], [19.1, 19.55], [19.75, 20.15]];
+
+  /* ---------- annotations (both copies) ---------- */
+  function paintAnnotations(t) {
+    // arrow
+    const pa = eIO(P(t, 15.4, 0.55));
+    const dx = HEAD[0] - TAIL[0], dy = HEAD[1] - TAIL[1], len = Math.hypot(dx, dy);
+    const ux = dx / len, uy = dy / len;
+    const tip = [TAIL[0] + dx * pa, TAIL[1] + dy * pa];
+    const back = Math.min(10, len * pa);
+    const lineEnd = [tip[0] - ux * back, tip[1] - uy * back];
+    const hs = 16 * C(pa * 4);
+    const head = pa > 0 ? `M${tip[0]} ${tip[1]}L${tip[0] - ux * hs + uy * hs * 0.55} ${tip[1] - uy * hs - ux * hs * 0.55}L${tip[0] - ux * hs - uy * hs * 0.55} ${tip[1] - uy * hs + ux * hs * 0.55}Z` : '';
+    const line = pa > 0 ? `M${TAIL[0]} ${TAIL[1]}L${lineEnd[0]} ${lineEnd[1]}` : '';
+    $$('.ar-l').forEach((e) => e.setAttribute('d', line));
+    $$('.ar-h').forEach((e) => e.setAttribute('d', head));
+
+    // highlighter
+    const ph = eIO(P(t, 16.7, 0.5));
+    $$('.hlr').forEach((e) => {
+      e.style.left = `${M.hl1.x - 4}px`; e.style.top = `${M.hl1.y + 3}px`;
+      e.style.height = `${M.hl1.h - 4}px`; e.style.width = `${(M.hl1.w + 10) * ph}px`;
+    });
+
+    // text
+    const n = Math.floor(P(t, 17.9, 0.5) * 13 + 0.0001);
+    const caretOn = t >= 17.85 && t < 18.8 && Math.floor((t - 17.85) * 3.2) % 2 === 0;
+    $$('.tx').forEach((e) => { e.textContent = 'make this pop'.slice(0, n); });
+    $$('.caret').forEach((e) => { e.style.opacity = caretOn ? 1 : 0; });
+
+    // blur
+    const b1 = eIO(P(t, 19.1, 0.45)), b2 = eIO(P(t, 19.75, 0.4));
+    const placeBlur = (sel, R, p) => $$(sel).forEach((e) => {
+      e.style.left = `${R.x - 6}px`; e.style.top = `${R.y - 3}px`;
+      e.style.height = `${R.h + 6}px`; e.style.width = `${(R.w + 12) * p}px`;
+      e.style.display = p > 0 ? 'block' : 'none';
+    });
+    placeBlur('.b1', M.em, b1);
+    placeBlur('.b2', M.ph, b2);
+
+    // the page is live until the shortcut, then it holds still
+    const tl = Math.min(t, 11.3);
+    $$('.a1').forEach((e) => { e.style.left = `${120 + 40 * Math.sin(tl * 1.3)}px`; e.style.top = `${-30 + 26 * Math.cos(tl * 1.1)}px`; });
+    $$('.a2').forEach((e) => { e.style.left = `${30 + 36 * Math.cos(tl * 1.7)}px`; e.style.top = `${120 + 20 * Math.sin(tl * 1.4)}px`; });
+    $$('.a3').forEach((e) => { e.style.left = `${150 + 50 * Math.sin(tl * 0.9 + 1)}px`; e.style.top = `${140 + 18 * Math.sin(tl * 2.1)}px`; });
+  }
+
+  /* ---------- logo ---------- */
+  function paintLogo(L, t, t0) {
+    const dirs = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    L.corners.forEach((c, i) => {
+      const p = eOut(P(t, t0 - 0.35 + i * 0.06, 1.0));
+      const d = (1 - p) * 260;
+      c.setAttribute('transform', `translate(${dirs[i][0] * d} ${dirs[i][1] * d})`);
+      c.style.opacity = C(p * 1.6);
+    });
+    const pt = spring(P(t, t0 + 0.2, 0.9));
+    L.tile.setAttribute('transform', `translate(512 512) scale(${0.55 + 0.45 * pt}) translate(-512 -512)`);
+    L.tile.style.opacity = C(P(t, t0 + 0.2, 0.25));
+    const pf = spring(P(t, t0 - 0.1, 1.0));
+    const tf = t - (t0 - 0.1);
+    const flap = tf > 0 ? Math.abs(Math.sin(tf * 9)) * Math.exp(-tf * 1.6) * 0.55 : 0;
+    L.fly.setAttribute('transform', `translate(512 520) scale(${pf}) translate(-512 -520)`);
+    L.wr.setAttribute('transform', `translate(512 0) scale(${1 - flap} 1) translate(-512 0)`);
+    L.wl.setAttribute('transform', `translate(512 0) scale(${1 - flap} 1) translate(-512 0)`);
+    const pg_ = P(t, t0 + 0.75, 0.7);
+    const gs = pg_ <= 0 ? 0 : pg_ < 0.45 ? eOut(pg_ / 0.45) * 1.5 : 1.5 - 0.5 * eIO((pg_ - 0.45) / 0.55);
+    L.glint.setAttribute('transform', `translate(790 446) rotate(${pg_ * 90}) scale(${gs}) translate(-790 -446)`);
+  }
+
+  /* ---------- scenes ---------- */
+  function s1(t) {
+    const L = $('#L1');
+    if (!show(L, t, 0, 3.55)) return;
+    const out = eIn(P(t, 3.05, 0.5));
+    L.style.opacity = 1 - out;
+    L.style.transform = `scale(${1 - 0.05 * out})`;
+    const push = 1.06 - 0.06 * eOut(P(t, 0, 3.4));
+    logo1.root.style.transform = `translate(-50%, -50%) scale(${push})`;
+    paintLogo(logo1, t, 0.6);
+    rise($('#word1 .line > span'), t, 1.55, 0.9);
+  }
+
+  function s2(t) {
+    const L = $('#L2');
+    if (!show(L, t, 3.4, 7.65)) return;
+    L.style.opacity = 1;
+    const spans = $$('#head2 .line > span');
+    const shift = 1 - eIO(P(t, 4.75, 0.8));
+    $('#head2').style.transform = `translateY(${shift * 165}px)`;
+    const ins = [3.5, 3.64, 4.95, 5.09];
+    spans.forEach((s, i) => {
+      const pin = eOut(P(t, ins[i], 0.85));
+      const pout = eIn(P(t, 7.0 + i * 0.06, 0.45));
+      s.style.transform = `translateY(${(1 - pin) * 105 - pout * 105}%)`;
+    });
+  }
+
+  function s3(t) {
+    const L = $('#L3');
+    if (!show(L, t, 7.45, 10.15)) return;
+    const out = eIn(P(t, 9.6, 0.5));
+    L.style.opacity = 1 - out;
+    L.style.transform = `scale(${1 - 0.06 * out})`;
+    rise($('#title3 .line > span'), t, 7.5, 0.85);
+    const caps = $$('#keys3 .cap');
+    const pressAt = [8.7, 8.82, 8.94];
+    caps.forEach((c, i) => {
+      const p = spring(P(t, 7.75 + i * 0.1, 0.9));
+      const down = t >= pressAt[i] && t < 9.45 ? eOut(P(t, pressAt[i], 0.08)) : t >= 9.45 ? 1 - eOut(P(t, 9.45, 0.15)) : 0;
+      c.style.opacity = C(P(t, 7.75 + i * 0.1, 0.2));
+      c.style.transform = `translateY(${(1 - p) * 120 + down * 9}px)`;
+      c.style.background = down > 0.5 ? '#f4f0f6' : '#fff';
+      c.style.boxShadow = `0 0 0 2px rgba(0,0,0,.07), 0 ${10 - down * 9}px 0 #e3e0e8, 0 ${26 - down * 16}px 40px -16px rgba(74,25,66,${0.28 - down * 0.12})`;
+      c.style.color = down > 0.5 ? '#ec4899' : '';
+    });
+    fadeUp($('#sub3'), t, 8.15, 0.8, 24);
+  }
+
+  const CAPS = [[10.15, 12.3], [12.3, 14.6], [14.6, 18.45], [18.45, 20.25], [20.25, 23.95]];
+  function s4(t) {
+    const L = $('#L4');
+    if (!show(L, t, 9.85, 24.0)) return;
+    const out = eIn(P(t, 23.45, 0.5));
+    L.style.opacity = 1 - out;
+
+    // captions
+    $$('#L4 .cap4').forEach((c, i) => {
+      const [a, b] = CAPS[i];
+      const on = t >= a - 0.01 && t < b;
+      c.style.display = on ? 'block' : 'none';
+      if (!on) return;
+      const o = i === CAPS.length - 1 ? 0 : eIn(P(t, b - 0.28, 0.28));
+      fadeUp($('h2', c), t, a + 0.02, 0.7, 46);
+      fadeUp($('p', c), t, a + 0.12, 0.7, 30);
+      c.style.opacity = 1 - o;
+      if (o > 0) c.style.transform = `translateY(${-20 * o}px)`; else c.style.transform = '';
+    });
+
+    // window
+    const win = $('#win');
+    const pw = eOut(P(t, 9.9, 1.0));
+    const lift = eIO(P(t, 21.15, 0.75));
+    win.style.opacity = C(P(t, 9.9, 0.4)) * (1 - lift);
+    win.style.transform = `translateY(${(1 - pw) * 280}px) scale(${1 - 0.08 * lift})`;
+
+    // shortcut chip floating over the window, then the page freezes
+    const hk = $('#hotkey');
+    const hin = spring(P(t, 10.75, 0.6)), hout = eIn(P(t, 11.55, 0.3));
+    hk.style.display = t > 10.7 && t < 11.9 ? 'flex' : 'none';
+    hk.style.opacity = C(P(t, 10.75, 0.15)) * (1 - hout);
+    hk.style.transform = `translateY(${(1 - hin) * 40}px) scale(${0.92 + 0.08 * hin})`;
+    $$('#hotkey .k').forEach((k, i) => {
+      const down = t >= 11.1 + i * 0.07 && t < 11.45;
+      k.style.background = down ? '#ff91e7' : 'rgba(255,255,255,.1)';
+      k.style.color = down ? '#2a0f26' : '';
+      k.style.transform = down ? 'translateY(3px)' : '';
+    });
+    const ring = $('#extRing');
+    const rp = P(t, 11.3, 0.7);
+    ring.style.opacity = rp > 0 && rp < 1 ? Math.sin(rp * Math.PI) : 0;
+    ring.style.transform = `scale(${1 + 0.25 * rp})`;
+
+    paintAnnotations(t);
+
+    // overlay
+    const ov = $('#ov');
+    const ovOut = eIO(P(t, 21.25, 0.4));
+    ov.style.display = t >= 11.35 ? 'block' : 'none';
+    ov.style.opacity = 1 - ovOut;
+    const scrim = eOut(P(t, 11.35, 0.35));
+    const sel = $('#sel');
+    const dp = eIO(P(t, 12.55, 1.1));
+    const x1 = lerp(S0[0], S1[0], dp), y1 = lerp(S0[1], S1[1], dp);
+    sel.style.left = `${S0[0]}px`; sel.style.top = `${S0[1]}px`;
+    sel.style.width = `${x1 - S0[0]}px`; sel.style.height = `${y1 - S0[1]}px`;
+    sel.style.boxShadow = `0 0 0 2000px rgba(20, 10, 24, ${0.48 * scrim})`;
+    $('#selB').style.display = dp > 0.005 ? 'block' : 'none';
+    const sz = $('#size');
+    sz.style.display = dp > 0.02 ? 'block' : 'none';
+    sz.style.left = `${S0[0]}px`; sz.style.top = `${S0[1] - 24}px`;
+    sz.textContent = `${Math.round((x1 - S0[0]) * 2)} × ${Math.round((y1 - S0[1]) * 2)}`;
+    const hx = [S0[0], (S0[0] + S1[0]) / 2, S1[0]], hy = [S0[1], (S0[1] + S1[1]) / 2, S1[1]];
+    const H = [[0, 0], [1, 0], [2, 0], [2, 1], [2, 2], [1, 2], [0, 2], [0, 1]];
+    $$('#ov .hd').forEach((h, i) => {
+      const p = spring(P(t, 13.72 + i * 0.025, 0.5));
+      h.style.left = `${hx[H[i][0]]}px`; h.style.top = `${hy[H[i][1]]}px`;
+      h.style.transform = `scale(${p})`; h.style.opacity = C(p * 3);
+    });
+    const cmd = $('#cmd');
+    const pc = spring(P(t, 11.5, 0.7));
+    cmd.style.opacity = C(P(t, 11.5, 0.2));
+    cmd.style.transform = `translate(${-M.cmdW / 2}px, ${(1 - pc) * -18}px) scale(${0.96 + 0.04 * pc})`;
+    const tb = $('#tb');
+    const pt = spring(P(t, 13.9, 0.75));
+    tb.style.top = `${TB_TOP}px`;
+    tb.style.opacity = C(P(t, 13.9, 0.2));
+    tb.style.transform = `translate(${-M.tbW / 2}px, ${(1 - pt) * 22}px) scale(${0.96 + 0.04 * pt})`;
+    const tool = toolAt(t);
+    $$('#tb .t[data-tool]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.tool === tool);
+      const ck = CLICKS.find((c) => t >= c - 0.02 && t < c + 0.14 && b.dataset.tool === tool);
+      b.style.transform = ck ? 'scale(.88)' : '';
+    });
+    const ink = tool === 'hl' ? 'amber' : 'red';
+    $$('#tb .sw').forEach((s) => s.classList.toggle('on', s.dataset.ink === ink));
+    $('#tb .ghost').style.color = t > 15.95 ? 'var(--hud-text)' : '';
+    $('#tb .copy').style.transform = t >= 20.73 && t < 20.88 ? 'scale(.92)' : '';
+
+    // flash
+    const fl = $('#flash');
+    const fp = P(t, 20.8, 0.45);
+    fl.style.left = `${S0[0]}px`; fl.style.top = `${S0[1]}px`;
+    fl.style.width = `${S1[0] - S0[0]}px`; fl.style.height = `${S1[1] - S0[1]}px`;
+    fl.style.opacity = fp > 0 && fp < 1 ? 0.85 * (1 - eOut(fp)) : 0;
+
+    // cursor
+    const cur = $('#cursor');
+    const cOn = t >= 11.8 && t < 21.1;
+    cur.style.display = cOn ? 'block' : 'none';
+    if (cOn) {
+      const [cx, cy] = cursorAt(t);
+      const pressed = PRESSES.some(([a, b]) => t >= a && t <= b) || CLICKS.some((c) => t >= c - 0.03 && t < c + 0.1);
+      cur.style.opacity = C(P(t, 11.8, 0.2)) * (1 - C(P(t, 20.9, 0.2)));
+      cur.style.transform = `translate(${cx - 2}px, ${cy - 2}px) scale(${pressed ? 0.86 : 1})`;
+    }
+
+    // the screenshot lifts off the page
+    const card = $('#card');
+    card.style.display = t >= 21.15 ? 'block' : 'none';
+    if (t >= 21.15) {
+      const lp = eIO(P(t, 21.15, 0.9));
+      const sc = 1 - 0.1 * lp;
+      card.style.transform = `translateY(${-50 * lp}px) scale(${sc})`;
+      card.style.borderRadius = `${22 * lp}px`;
+      card.style.boxShadow = `0 0 0 1.5px rgba(0,0,0,${0.08 * lp}), 0 ${50 * lp}px ${100 * lp}px -${30 * lp}px rgba(74,25,66,${0.45 * lp})`;
+    }
+    const cp = $('#copied');
+    const cpp = spring(P(t, 21.7, 0.7));
+    cp.style.display = t >= 21.7 ? 'flex' : 'none';
+    cp.style.opacity = C(P(t, 21.7, 0.2));
+    cp.style.transform = `translateY(${(1 - cpp) * 50}px) scale(${0.9 + 0.1 * cpp})`;
+  }
+
+  function s5(t) {
+    const L = $('#L5');
+    if (!show(L, t, 23.85, 28.45)) return;
+    const out = eIn(P(t, 27.95, 0.5));
+    L.style.opacity = 1 - out;
+    L.style.transform = `scale(${1 - 0.04 * out})`;
+    const c = $('#L5 .cap4');
+    fadeUp($('h2', c), t, 23.95, 0.7, 46);
+    fadeUp($('p', c), t, 24.05, 0.7, 30);
+    const tall = $('#tall');
+    const pin = eOut(P(t, 23.95, 0.9));
+    tall.style.opacity = C(P(t, 23.95, 0.35));
+    tall.style.transform = `translateY(${(1 - pin) * 200}px)`;
+    fadeUp($('#badge5'), t, 24.2, 0.6, 20);
+
+    // nine captures, about four a second here (the real thing is slower; this is a film)
+    const T0 = 24.55, STEP = 0.24;
+    const k = C((t - T0) / STEP / 8);
+    const steps = (t - T0) / STEP;
+    const i0 = Math.max(0, Math.min(8, Math.floor(steps)));
+    const frac = steps < 0 ? 0 : steps >= 8 ? 0 : steps - Math.floor(steps);
+    const pos = Math.min(8, i0 + eIO(C(frac * 1.6)));
+    $('#frame5').style.top = `${pos * 380 - 2}px`;
+    const done = Math.floor(C((t - T0 + 0.12) / (STEP * 8)) * 8 + 1e-6) + (t >= T0 ? 1 : 0);
+    secs.forEach((s, i) => { s.style.opacity = i < done ? 1 : 0.28; });
+    $('#badge5 .num').textContent = `${Math.max(1, Math.min(9, done))}/9`;
+    const cam = Math.max(1040 - 3420, Math.min(0, 520 - (pos * 380 + 190)));
+    const z = eIO(P(t, 26.75, 0.85));
+    const s = lerp(1, 1040 / 3420, z);
+    $('#strip').style.transform = `translateY(${lerp(cam, 0, z)}px) scale(${s})`;
+    $('#frame5').style.opacity = 1 - C(P(t, 26.55, 0.25));
+    fadeUp($('#dims5'), t, 27.25, 0.6, 24);
+    void k;
+  }
+
+  function s6(t) {
+    const L = $('#L6');
+    if (!show(L, t, 28.3, 31.75)) return;
+    const out = eIn(P(t, 31.25, 0.5));
+    L.style.opacity = 1 - out;
+    L.style.transform = `scale(${1 - 0.04 * out})`;
+    $$('#head6 .line > span').forEach((s, i) => rise(s, t, 28.4 + i * 0.14, 0.85));
+    $$('.row6').forEach((r, i) => {
+      fadeUp(r, t, 29.25 + i * 0.25, 0.7, 36);
+      const tk = $('.tick', r);
+      const p = spring(P(t, 29.3 + i * 0.25, 0.6));
+      tk.style.transform = `scale(${p})`;
+    });
+    rise($('#free6 .line > span'), t, 30.25, 0.85);
+  }
+
+  const FLIES = [
+    { x: 160, y: 300, s: 0.9, r: -16, ph: 0.0 },
+    { x: 870, y: 390, s: 1.2, r: 14, ph: 1.3 },
+    { x: 110, y: 1240, s: 0.6, r: 20, ph: 2.1 },
+    { x: 960, y: 1200, s: 0.7, r: -10, ph: 0.7 },
+  ];
+  function s7(t) {
+    const L = $('#L7');
+    if (!show(L, t, 31.6, 99)) return;
+    L.style.opacity = 1;
+    const push = 1.04 - 0.04 * eOut(P(t, 31.6, 4));
+    logo7.root.style.transform = `translate(-50%, -50%) scale(${push})`;
+    paintLogo(logo7, t, 32.0);
+    rise($('#word7 .line > span'), t, 32.35, 0.9);
+    fadeUp($('#tag7'), t, 32.6, 0.8, 26);
+    fadeUp($('#avail7'), t, 33.0, 0.8, 22);
+    const cta = $('#cta7');
+    const pc = spring(P(t, 33.15, 0.8));
+    cta.style.opacity = C(P(t, 33.15, 0.2));
+    cta.style.transform = `translateY(${(1 - pc) * 40}px) scale(${0.9 + 0.1 * pc})`;
+    fadeUp($('#works7'), t, 33.45, 0.8, 20);
+    fadeUp($('#family7'), t, 33.8, 0.9, 24);
+    $$('#L7 .fly').forEach((f, i) => {
+      const F = FLIES[i];
+      const a = t - 32.2 - i * 0.18;
+      const p = eOut(C(a / 1.2));
+      const x = F.x + 18 * Math.sin(a * 0.9 + F.ph) + (1 - p) * (i % 2 ? 160 : -160);
+      const y = F.y + 14 * Math.sin(a * 1.3 + F.ph * 2) + (1 - p) * 80;
+      const flap = 0.62 + 0.38 * Math.abs(Math.cos(a * 4.2 + F.ph));
+      f.style.opacity = C(a / 0.5) * (i > 1 ? 0.8 : 1);
+      f.style.transform = `translate(${x - 60}px, ${y - 44}px) rotate(${F.r + 6 * Math.sin(a + F.ph)}deg) scale(${F.s * p}, ${F.s * p})`;
+      $$('use', f)[0].style.transform = `scaleX(${flap})`;
+      $$('use', f)[0].style.transformOrigin = '50% 50%';
+    });
+  }
+
+  function render(t) {
+    s1(t); s2(t); s3(t); s4(t); s5(t); s6(t); s7(t);
+  }
+
+  window.DURATION = DURATION;
+  window.render = render;
+  window.ready = document.fonts.ready.then(() => { measure(); render(0); return true; });
+
+  // live preview when opened directly
+  if (!/[?&]capture/.test(location.search)) {
+    window.ready.then(() => {
+      const t0 = performance.now();
+      const tick = () => { render(((performance.now() - t0) / 1000) % (DURATION + 1)); requestAnimationFrame(tick); };
+      tick();
+    });
+  }
+})();
+</script>
+</body>
+</html>

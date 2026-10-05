@@ -17,6 +17,7 @@ scribble on it, and it's on your clipboard, ready to paste.
   <img alt="Build step: none" src="https://img.shields.io/badge/build%20step-none-c3a6f0">
   <img alt="Tracking: none" src="https://img.shields.io/badge/tracking-none-ff91e7">
   <img alt="Host permissions: none" src="https://img.shields.io/badge/host%20permissions-none-c3a6f0">
+  <a href="https://chromewebstore.google.com/detail/nhakocapture/jappjdkoignhbjjlemegflaleoeebpln"><img alt="Chrome Web Store: free" src="https://img.shields.io/badge/Chrome%20Web%20Store-free-ff91e7"></a>
 </p>
 
 </div>
@@ -79,11 +80,15 @@ mocked up. See [For developers](#for-developers) for how they're made.
 
 ## Install
 
-**Chrome Web Store:** coming soon. The link will go here once it's approved.
-It works in Chrome, Brave, Edge and other Chromium browsers.
+**[Add NhakoCapture from the Chrome Web Store](https://chromewebstore.google.com/detail/nhakocapture/jappjdkoignhbjjlemegflaleoeebpln).**
+It's free, and it works in Chrome, Brave, Edge and other Chromium browsers.
+Click *Add to Chrome* (Brave and Edge say the same, or *Get*), then pin it from
+the puzzle-piece menu so it's always one click away.
 
-Until then, or if you'd rather run it straight from the source, load it
-yourself. It takes a minute:
+### From the source
+
+If you'd rather run it straight from this repository, load it yourself. It
+takes a minute:
 
 1. Download or clone this repository.
 2. Open your browser's extensions page: `chrome://extensions`, `brave://extensions`
@@ -367,7 +372,8 @@ On purpose, and not by much:
 
 ## Status
 
-Version 2.2, packaged and ready for the Chrome Web Store. Everything
+Version 2.2, live on the
+[Chrome Web Store](https://chromewebstore.google.com/detail/nhakocapture/jappjdkoignhbjjlemegflaleoeebpln). Everything
 described above works. The browser checks drive a real Chromium with real input,
 but they don't replace trying the extension in your own browser, so do that
 hands-on pass with the packaged zip before each release.
