@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """Generate the NhakoCapture icon set from the SVG masters.
 
-The mark is a butterfly caught in a capture frame: the Nhako family's
-butterfly (NhakoSearch, NeraOS) inside the universal "select an area" symbol.
-Two masters, because one drawing cannot serve every size:
+The mark is the NhakoCapture mascot: a purple pixel-art instant camera with a
+smiling face, coming in from the lower left of an orange square. It is one of
+the seven Nhako mascots, drawn on a 48px grid by Nhako-home's
+scripts/mascots.py and written here by Nhako-home's scripts/brand_assets.py:
 
-    docs/brand/logo.svg        48px and up, and everywhere the brand appears
-    docs/brand/logo-small.svg  16px and 32px -- heavier frame, bigger
-                               butterfly, no tape, spots or antennae, which
-                               all turn to grey noise in the toolbar
+    docs/brand/logo.svg        the mascot, every size
+    docs/brand/logo-small.svg  the same art (kept so this script still has a
+                               separate 16px and 32px master if one is drawn)
+    docs/brand/logo-circle.png the README badge, transparent outside the circle
 
-Each master is rendered once at 1024px by headless Chrome (the SVGs use
-gradients and filters that no Python rasteriser on a stock machine handles),
-then downsampled with LANCZOS for clean antialiased edges.
+brand_assets.py is the preferred way to write the icons: it scales the grid
+directly. This script is the fallback that needs only this repo: each master
+is rendered once at 1024px by headless Chrome, then downsampled with LANCZOS.
 
     python3 tools/make-icons.py
 """

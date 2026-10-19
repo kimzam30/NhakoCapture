@@ -44,7 +44,7 @@
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   };
 
-  /* Drawn for 18px: the logo's butterfly with its outline dropped, which on
+  /* Drawn for 18px: the Nhako family butterfly with its outline dropped, which on
    * dark glass would only thicken it. Pink over lavender, pale body. */
   const BUTTERFLY =
     '<svg viewBox="0 0 24 24">' +

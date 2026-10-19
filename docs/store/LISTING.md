@@ -31,7 +31,7 @@ Screenshot anything. Never leave the tab.
 NhakoCapture is a screenshot tool that works right on the page. Press one shortcut and the page holds still. Drag a box around what matters, draw an arrow on it, blur the bits nobody else should see, and it's on your clipboard, ready to paste. No new tab, no separate editor, no account.
 
 HOW IT WORKS
-1. Press Ctrl+Shift+5 (⌘+Shift+2 on a Mac), or click the butterfly in your toolbar.
+1. Press Ctrl+Shift+5 (⌘+Shift+2 on a Mac), or click the camera in your toolbar.
 2. The page freezes. Drag over anything to frame it, or pick Visible area or Whole page.
 3. Mark it up with the tool bar that appears underneath.
 4. Hit Copy to paste it anywhere, or Save to choose where the file goes.

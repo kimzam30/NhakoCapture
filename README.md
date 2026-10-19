@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/brand/logo-512.png" width="128" height="128" alt="NhakoCapture logo: a pink and lavender butterfly caught inside a capture frame">
+<img src="docs/brand/logo-circle.png" width="128" height="128" alt="NhakoCapture logo: a purple pixel-art instant camera with a smiling face and a blue lens, on an orange circle">
 
 # NhakoCapture
 
@@ -101,7 +101,7 @@ Needs Chrome, Brave or Edge **116 or newer**.
 
 ## How to use it
 
-Press the shortcut, or click the butterfly in your toolbar.
+Press the shortcut, or click the camera in your toolbar.
 
 | | Shortcut |
 |---|---|
