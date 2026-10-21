@@ -58,5 +58,5 @@
     }
   }
 
-  NC.define('clipboard', { writePng, supported });
+  NC.define('clipboard', { writePng });
 })();

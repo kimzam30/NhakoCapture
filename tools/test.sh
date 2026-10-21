@@ -19,6 +19,37 @@ print(f"  {len(set(paths))} referenced paths, {len(bad)} missing")
 if bad: print("  MISSING:", bad); sys.exit(1)
 PY
 
+step "firefox manifest"
+python3 - <<'PY' || fail=1
+import os, subprocess, sys, json
+m = json.loads(subprocess.check_output([sys.executable, 'tools/firefox-manifest.py']))
+bad = [p for p in m['background']['scripts'] if not os.path.isfile(p)]
+gecko = m.get('browser_specific_settings', {}).get('gecko', {})
+problems = []
+if bad: problems.append(f"missing scripts {bad}")
+if 'service_worker' in m['background']: problems.append('service_worker left in')
+if 'offscreen' in m['permissions']: problems.append('offscreen permission left in')
+if not gecko.get('id'): problems.append('no gecko id')
+if gecko.get('data_collection_permissions', {}).get('required') != ['none']:
+    problems.append('data_collection_permissions must declare none')
+if m['background']['scripts'][0] != 'src/offscreen.js':
+    problems.append('offscreen.js must load before background.js')
+print(f"  {len(problems)} problems")
+if problems: print("  ", problems); sys.exit(1)
+PY
+
+step "html script paths resolve"
+python3 - <<'PY' || fail=1
+import re, os, sys
+bad = []
+for page in ('src/offscreen.html', 'src/fallback/editor.html'):
+    for src in re.findall(r'<script src="([^"]+)"', open(page).read()):
+        p = os.path.normpath(os.path.join(os.path.dirname(page), src))
+        if not os.path.isfile(p): bad.append((page, src))
+print(f"  {len(bad)} broken")
+if bad: print("  BROKEN:", bad); sys.exit(1)
+PY
+
 step "js syntax"
 for f in $(find src tools -name '*.js' -o -name '*.mjs' | sort); do
   if node --check "$f" 2>/dev/null; then printf '  ok   %s\n' "$f"

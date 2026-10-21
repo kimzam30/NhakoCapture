@@ -170,10 +170,28 @@ They're the slower option, and here's why:
 | `scripting` | To put the overlay on the page you're capturing. |
 | `storage` | To hand a capture to the editing window on pages where the overlay can't run. |
 | `downloads` | To open a real Save dialog, so you pick where the file goes. |
-| `offscreen` | To copy images on plain `http://` pages, where the page itself isn't allowed to use the clipboard. On those pages the copy pastes into chats and documents, but not into image editors, and NhakoCapture tells you so. |
+| `clipboardWrite` | Firefox only, in place of `offscreen`: lets the add-on's background page put the image on the clipboard. |
+| `offscreen` | Chrome only. To copy images on plain `http://` pages, where the page itself isn't allowed to use the clipboard. On those pages the copy pastes into chats and documents, but not into image editors, and NhakoCapture tells you so. |
 
 No host permissions, no access to your browsing history, and no network
 requests. See [PRIVACY.md](PRIVACY.md).
+
+## What's new in 2.3
+
+- **Coming to Firefox.** The same code now builds for Firefox too
+  (`./tools/package.sh firefox`). Firefox has no offscreen documents, so there
+  its background page does the copying and saving itself.
+- **The camera mascot in the toolbar.** The small mark at the start of the
+  toolbar is now the pixel camera from the icon, instead of the old butterfly.
+- **Fixed: opening two editing windows close together** could show the wrong
+  capture, label a normal capture "cut off", or keep a whole-page image in
+  memory until the browser restarted.
+- **Fixed: pressing the shortcut twice very fast** said the page was
+  off-limits. It now says to try again.
+- **Fixed: a page too big to encode** opened an empty editing window. The
+  toolbar now says the page is too big.
+- **Tidier code.** Unused exports and design tokens are gone, and the toolbar
+  builds its icons as DOM nodes, not through `innerHTML`.
 
 ## What's new in 2.2
 
@@ -273,7 +291,8 @@ marks over the capture. That's what makes undo possible.
 The look comes from the Nhako family. [Nhako Tools](https://tools.nhako.com) gave
 it the brand pink (`#FF91E7`) and the rule of one typeface, San Francisco,
 through the system and never downloaded. NhakoSearch and NeraOS gave it lavender
-(`#C3A6F0`), the plum ink, the butterfly, and the striped progress bar. The
+(`#C3A6F0`), the plum ink, and the striped progress bar. The mascot, a purple
+pixel-art camera, is one of the seven Nhako mascots. The
 one button that finishes the job, **Copy**, is solid brand pink with plum
 text (8.75:1), so there's never any doubt where to click. The feel
 comes from macOS's own screenshot tool: frosted dark glass, hairline edges, and
@@ -307,6 +326,12 @@ It also makes the screenshot at the top of this page:
 ```bash
 node tools/preview.mjs out/ --hero
 ```
+
+### Releasing to Firefox
+
+Build with `./tools/package.sh firefox` and follow
+[`docs/store/FIREFOX.md`](docs/store/FIREFOX.md). `./tools/package.sh all`
+builds both zips from one version number.
 
 ### Releasing to the Chrome Web Store
 
@@ -365,9 +390,8 @@ On purpose, and not by much:
 <div align="center">
   <img src="docs/store/promo-marquee-1400x560.png" alt="NhakoCapture marquee: 'Screenshot anything. Never leave the tab.' beside a browser window showing the overlay in use" width="100%">
   <br><br>
-  <img src="docs/launch/poster.png" alt="NhakoCapture launch poster: 'Screenshot anything. Never leave the tab.' above a browser window showing the overlay in use, with 'Free on the Chrome Web Store' underneath" width="520">
   &nbsp;
-  <img src="docs/store/promo-small-440x280.png" alt="NhakoCapture small promo tile: the butterfly logo, the name, and 'Screenshot anything. Never leave the tab.'" width="300">
+  <img src="docs/store/promo-small-440x280.png" alt="NhakoCapture small promo tile: the pixel camera mascot, the name, and 'Screenshot anything. Never leave the tab.'" width="300">
 </div>
 
 ## Status

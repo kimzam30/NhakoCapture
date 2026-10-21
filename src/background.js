@@ -15,6 +15,13 @@
 const OFFSCREEN_TARGET = 'nc-offscreen';
 const OFFSCREEN_PATH = 'src/offscreen.html';
 
+/* Firefox has no offscreen API, but it doesn't need one: its MV3 background is
+ * an event page with a DOM, so the Firefox manifest loads src/offscreen.js
+ * into the background itself and its jobs are called in-process. Chrome's
+ * service worker has neither, so there the offscreen document stays. */
+const IN_PROCESS_OFFSCREEN =
+  typeof chrome.offscreen === 'undefined' && typeof ncOffscreenHandle === 'function';
+
 /* Injected in this order. namespace.js must be first; it is what the others
  * attach to. See src/lib/namespace.js for why there is no bundler. */
 const OVERLAY_FILES = [
@@ -58,14 +65,18 @@ async function overlayStyles() {
 /* Pages where content scripts cannot run at all. Checking up front lets us give
  * a real reason instead of surfacing an opaque injection error. */
 const RESTRICTED_SCHEME =
-  /^(chrome|brave|edge|opera|vivaldi|about|devtools|view-source|chrome-extension|moz-extension|chrome-search|chrome-untrusted):/i;
+  /^(chrome|brave|edge|opera|vivaldi|about|devtools|view-source|chrome-extension|moz-extension|chrome-search|chrome-untrusted|resource|jar):/i;
 // The trailing boundary matters: without it "chromewebstore.google.com.evil.com"
 // matches the prefix and we would refuse to capture an unrelated site.
 const WEB_STORE =
   /^https:\/\/(chromewebstore\.google\.com(?=[/?#]|$)|chrome\.google\.com\/webstore(?=[/?#]|$))/i;
 
+// Firefox refuses content scripts on its own store and account pages.
+const MOZILLA_RESTRICTED =
+  /^https:\/\/(addons\.mozilla\.org|accounts\.firefox\.com|support\.mozilla\.org)(?=[/?#:]|$)/i;
+
 function isRestricted(url) {
-  return !url || RESTRICTED_SCHEME.test(url) || WEB_STORE.test(url);
+  return !url || RESTRICTED_SCHEME.test(url) || WEB_STORE.test(url) || MOZILLA_RESTRICTED.test(url);
 }
 
 /* --- the action badge ----------------------------------------------------- */
@@ -268,18 +279,95 @@ async function fallbackWindowSize(dataUrl) {
   }
 }
 
-async function openEditorWindow(payload, size) {
-  await chrome.storage.local.set(payload);
-  await chrome.windows.create({
-    url: 'src/fallback/editor.html',
-    type: 'popup',
-    focused: true,
-    ...size,
-  });
+/* --- state that must outlive the worker ----------------------------------
+ *
+ * Chromium evicts an idle service worker after about 30s, and Firefox
+ * unloads an idle event page, while the things this file is waiting on -- a
+ * Save As dialog, an editor window that has not read its capture yet -- can
+ * stay open far longer. Anything the next wake-up needs to finish that job
+ * therefore lives in storage.session, not in a variable: it survives the
+ * worker, never touches disk, and is cleared when the browser exits.
+ *
+ * Updates are read-modify-write, so they are queued: two settling downloads
+ * must not each read the same map and write back a copy missing the other's
+ * change. */
+const SESSION_BLOBS = 'nc-outstanding-blobs';      // [blob url] still owed a revoke
+const SESSION_DOWNLOADS = 'nc-pending-downloads';  // { downloadId: blob url }
+const SESSION_EDITORS = 'nc-editor-windows';       // { windowId: { nonce, blobUrl } }
+const EDITOR_HANDOFF = 'nc-editor:';               // + nonce -> the capture itself
+
+let sessionQueue = Promise.resolve();
+
+async function readSession(key, fallback) {
+  const { [key]: value } = await chrome.storage.session.get(key);
+  return value ?? fallback;
 }
 
+/* `change` gets the current value and returns [next, result]; an undefined
+ * `next` leaves storage untouched. */
+function updateSession(key, fallback, change) {
+  const run = sessionQueue.then(async () => {
+    const [next, result] = change(await readSession(key, fallback));
+    if (next !== undefined) await chrome.storage.session.set({ [key]: next });
+    return result;
+  });
+  sessionQueue = run.catch(() => {});
+  return run;
+}
+
+/* The editor window learns which capture is its own from a nonce in its URL,
+ * and reads it from storage.session under that nonce.
+ *
+ * Both halves matter. storage.local wrote every screenshot to the profile on
+ * disk, where it sat until the editor read it -- or for good, if it never
+ * did. And with one fixed set of keys, a second capture opened before the
+ * first window had read its own overwrote it, so the first window showed the
+ * second capture. A nonce per window means two handoffs never share a key. */
+async function openEditorWindow(payload, size) {
+  const nonce = crypto.randomUUID();
+  const key = EDITOR_HANDOFF + nonce;
+  await chrome.storage.session.set({ [key]: payload });
+
+  let win;
+  try {
+    win = await chrome.windows.create({
+      url: `src/fallback/editor.html#${nonce}`,
+      type: 'popup',
+      focused: true,
+      ...size,
+    });
+  } catch (err) {
+    await chrome.storage.session.remove(key).catch(() => {});
+    throw err;
+  }
+
+  /* Remembered per window so that closing it settles whatever it left
+   * behind: a handoff it never read, or a blob it never got as far as
+   * decoding (the editor only reports a blob consumed once decoded). */
+  if (win?.id !== undefined) {
+    await updateSession(SESSION_EDITORS, {}, (windows) => [
+      { ...windows, [win.id]: { nonce, blobUrl: payload.captureBlobUrl ?? null } },
+    ]);
+  }
+}
+
+chrome.windows.onRemoved.addListener(async (windowId) => {
+  try {
+    // Every window closing lands here; only our editors cost a write.
+    const editor = await updateSession(SESSION_EDITORS, {}, (windows) => {
+      const { [windowId]: gone, ...rest } = windows;
+      return [gone ? rest : undefined, gone];
+    });
+    if (!editor) return;
+    await chrome.storage.session.remove(EDITOR_HANDOFF + editor.nonce);
+    if (editor.blobUrl) revokeBlobUrl(editor.blobUrl);
+  } catch {
+    /* Nothing to settle, or the browser is shutting down and settling it. */
+  }
+});
+
 /* Restricted pages: the capture is a single viewport, comfortably inside
- * storage.local's quota, and this path is unchanged. */
+ * storage.session's 10MB quota, and travels as a data URL. */
 async function openFallback(dataUrl, tabId) {
   try {
     await openEditorWindow({ capturedImage: dataUrl }, await fallbackWindowSize(dataUrl));
@@ -292,9 +380,8 @@ async function openFallback(dataUrl, tabId) {
 
 /* Full-page captures go through a blob URL instead.
  *
- * storage.local caps at about 10MB without the unlimitedStorage permission,
- * and a data URL pays a further 33% in base64 on top of an image that is
- * already the tallest thing this extension produces -- so the storage route
+ * storage.session caps at 10MB, and a data URL pays a further 33% in base64
+ * on top of an image that is already the tallest thing this extension produces -- so the storage route
  * this replaces would fail exactly on the captures worth taking. Only the URL
  * itself, a short string, goes through storage.
  *
@@ -363,10 +450,13 @@ async function launch(tab) {
   try {
     dataUrl = await captureViewport(tab.windowId);
   } catch (err) {
+    /* A second press inside the same second trips the browser's capture rate
+     * limit. That is a "try again", not a page the browser has locked away. */
+    const tooFast = /MAX_CAPTURE|per second|rate/i.test(String(err));
     await reportFailure(
       tab.id,
-      'can’t capture this page',
-      'The browser keeps its own pages and the Web Store off-limits to extensions.'
+      tooFast ? 'pressed too quickly — try again' : 'can’t capture this page',
+      tooFast ? '' : 'The browser keeps its own pages and its add-on store off-limits to extensions.'
     );
     console.warn('[NhakoCapture] capture refused:', err);
     return;
@@ -428,10 +518,17 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /* "Receiving end does not exist" is not a failure, it is a not-yet. It means
  * the message was never delivered -- so nothing happened on the other side and
- * a retry cannot double an effect. Every other error is real and is rethrown. */
+ * a retry cannot double an effect. */
+function wasNotDelivered(err) {
+  return /Receiving end does not exist|Could not establish connection/i.test(String(err));
+}
+
+/* "message port closed" is different: the message WAS delivered, and the
+ * document went away before answering. That is still a not-yet for the
+ * readiness ping, which has no effect to double, but never for a payload --
+ * see askOffscreen. */
 function isDisconnected(err) {
-  return /Receiving end does not exist|Could not establish connection|message port closed/i
-    .test(String(err));
+  return wasNotDelivered(err) || /message port closed/i.test(String(err));
 }
 
 /* Waiting schedule for the readiness handshake, in ms before each attempt.
@@ -506,21 +603,29 @@ async function ensureOffscreen() {
  * document as a not-yet rather than a failure -- the next capture pays one
  * handshake, which is the same cost it pays after Chromium evicts the worker.
  *
- * `outstandingBlobs` is a count rather than a set because the URLs themselves
- * live in the offscreen document; this side only needs to know whether any are
- * still owed a revoke. A URL the editor window never consumes leaves the count
- * above zero and the document open -- which is exactly the old behaviour, so
- * the worst case here is no worse than before. */
+ * Both lists live in storage.session (SESSION_BLOBS, SESSION_DOWNLOADS), not
+ * in memory. The offscreen document outlives the worker: when the worker was
+ * evicted with a Save As dialog open, the next one woke up believing nothing
+ * was owed, closed the document under the dialog, and had no record of which
+ * blob the download's eventual onChanged should revoke.
+ *
+ * Blobs are tracked by URL rather than counted, so a revoke that arrives twice
+ * -- the editor reporting its capture consumed, then its window closing --
+ * settles one entry, not two. A URL the editor window never consumes is
+ * settled when that window closes. */
 const OFFSCREEN_IDLE_MS = 30000;
-let outstandingBlobs = 0;
 let offscreenIdleTimer = null;
 
 function scheduleOffscreenClose() {
   clearTimeout(offscreenIdleTimer);
   offscreenIdleTimer = setTimeout(async () => {
-    // A Save As dialog can stay open indefinitely; its blob must outlive it.
-    if (outstandingBlobs > 0 || pendingDownloads.size > 0) return;
     try {
+      // A Save As dialog can stay open indefinitely; its blob must outlive it.
+      const [blobs, downloads] = await Promise.all([
+        readSession(SESSION_BLOBS, []),
+        readSession(SESSION_DOWNLOADS, {}),
+      ]);
+      if (blobs.length > 0 || Object.keys(downloads).length > 0) return;
       const contexts = await chrome.runtime.getContexts({
         contextTypes: ['OFFSCREEN_DOCUMENT'],
       });
@@ -533,22 +638,36 @@ function scheduleOffscreenClose() {
 }
 
 async function askOffscreen(op, payload) {
+  if (IN_PROCESS_OFFSCREEN) return ncOffscreenHandle({ op, ...payload });
+
+  /* Held off for the whole round trip, not just re-armed when it ends: a
+   * timer that fires while a large make-blob-url is still in flight would
+   * close the document underneath it. */
+  clearTimeout(offscreenIdleTimer);
+
   let lastErr;
   /* Two passes, not more. The handshake in ensureOffscreen already absorbs a
    * slow start; this second pass exists only for the document being torn down
    * between the ping and the payload, which can happen once and then not
    * again. An unbounded retry would turn a dead offscreen document into a
-   * hang instead of an error. */
+   * hang instead of an error.
+   *
+   * Only an undelivered message is retried. "message port closed" means the
+   * document received it and died before replying: it may already have
+   * minted a blob, and sending again would mint a second one that nothing
+   * here knows to revoke. */
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await ensureOffscreen();
     try {
       const res = await chrome.runtime.sendMessage({ target: OFFSCREEN_TARGET, op, ...payload });
-      if (op === 'make-blob-url' && res?.ok) outstandingBlobs += 1;
+      if (op === 'make-blob-url' && res?.ok) {
+        await updateSession(SESSION_BLOBS, [], (urls) => [[...urls, res.url]]);
+      }
       scheduleOffscreenClose();
       return res;
     } catch (err) {
       lastErr = err;
-      if (!isDisconnected(err)) throw err;
+      if (!wasNotDelivered(err)) throw err;
     }
   }
   throw lastErr;
@@ -577,16 +696,18 @@ function timestampedName() {
  * As dialog can stay open indefinitely, and revoking underneath it would fail
  * the download. */
 function revokeBlobUrl(url) {
-  outstandingBlobs = Math.max(0, outstandingBlobs - 1);
-  chrome.runtime
-    .sendMessage({ target: OFFSCREEN_TARGET, op: 'revoke-blob-url', url })
+  if (IN_PROCESS_OFFSCREEN) {
+    ncOffscreenHandle({ op: 'revoke-blob-url', url });
+    return;
+  }
+  updateSession(SESSION_BLOBS, [], (urls) => [urls.filter((u) => u !== url)])
+    .catch(() => {})
+    .then(() => chrome.runtime.sendMessage({ target: OFFSCREEN_TARGET, op: 'revoke-blob-url', url }))
     .catch(() => {
       /* Offscreen document already gone; the URL died with it. */
     })
     .finally(scheduleOffscreenClose);
 }
-
-const pendingDownloads = new Map(); // downloadId -> blob url
 
 /* Chromium has reported a dismissed Save As dialog both as the interrupt
  * reason USER_CANCELED and as a plain "Download canceled". Matching only the
@@ -596,13 +717,17 @@ function isCancel(err) {
   return /USER_CANCEL|cancel/i.test(String(err?.message ?? err));
 }
 
-chrome.downloads.onChanged.addListener(({ id, state }) => {
-  if (!state || !pendingDownloads.has(id)) return;
+/* Read from storage.session, not memory: a worker that wakes up for this
+ * event may not be the one that started the download. */
+chrome.downloads.onChanged.addListener(async ({ id, state }) => {
+  if (!state) return;
   if (state.current !== 'complete' && state.current !== 'interrupted') return;
 
-  const url = pendingDownloads.get(id);
-  pendingDownloads.delete(id);
-  revokeBlobUrl(url);
+  const url = await updateSession(SESSION_DOWNLOADS, {}, (downloads) => {
+    const { [id]: settled, ...rest } = downloads;
+    return [settled ? rest : undefined, settled];
+  }).catch(() => undefined);
+  if (url) revokeBlobUrl(url);
 });
 
 async function saveImage(dataUrl, filename) {
@@ -617,7 +742,11 @@ async function saveImage(dataUrl, filename) {
       filename: filename || timestampedName(),
       saveAs: true,
     });
-    pendingDownloads.set(id, made.url);
+    /* Not allowed to throw into the catch below: the download is already
+     * under way, and revoking its blob there would fail it. */
+    await updateSession(SESSION_DOWNLOADS, {}, (downloads) => [
+      { ...downloads, [id]: made.url },
+    ]).catch(() => {});
     return { ok: true, downloadId: id };
   } catch (err) {
     revokeBlobUrl(made.url);

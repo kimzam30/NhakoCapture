@@ -2,22 +2,31 @@
 <link rel="stylesheet" href="store.css">
 <style>
   html, body { width: 1280px; height: 800px; }
-  header { position: absolute; top: 90px; left: 0; right: 0; text-align: center; }
-  .logo { width: 104px; height: 104px; filter: drop-shadow(0 10px 24px rgba(74,25,66,.25)); }
-  h1 { margin-top: 26px; font-size: 62px; }
-  .sub { margin: 18px auto 0; max-width: 640px; font-size: 20px; }
-  .grid { position: absolute; left: 110px; right: 110px; top: 450px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
-  .card { background: #fff; border-radius: 18px; padding: 26px 22px; text-align: left;
-          box-shadow: 0 0 0 1px rgba(74,25,66,.08), 0 16px 34px -20px rgba(74,25,66,.4); }
-  .big { font-size: 40px; font-weight: 750; letter-spacing: -.04em; color: var(--pink); }
-  .card p { margin-top: 6px; font-size: 16px; color: var(--muted); line-height: 1.35; }
-  .keys { position: absolute; left: 0; right: 0; bottom: 64px; justify-content: center; display: flex; }
-</style></head><body>
-<div class="glow"></div>
-<img class="fly" src="butterfly.svg" style="left:250px;top:120px;width:52px;transform:rotate(-14deg)">
-<img class="fly" src="butterfly.svg" style="left:980px;top:170px;width:64px;transform:rotate(12deg)">
+  header { position: absolute; top: 64px; left: 0; right: 0; text-align: center; }
+  header .mascot { width: 112px; height: 112px; margin: 0 auto; box-shadow: 6px 6px 0 var(--orange); border-color: var(--cream); }
+  h1 { margin-top: 30px; font-size: 64px; }
+  .sub { margin: 18px auto 0; max-width: 660px; font-size: 20px; }
+  .grid { position: absolute; left: 110px; right: 110px; top: 460px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+  .card { padding: 22px 22px 24px; text-align: left; color: var(--plum); }
+  .card:nth-child(1) { --s: var(--orange); }
+  .card:nth-child(2) { --s: var(--lilac); }
+  .card:nth-child(3) { --s: var(--sky); }
+  .card:nth-child(4) { --s: var(--yellow); }
+  .card { background: var(--cream); border: 4px solid var(--cream); box-shadow: 8px 8px 0 var(--s); }
+  .big { font-family: "Pixelify Sans", monospace; font-size: 46px; font-weight: 600; line-height: 1; color: var(--plum); }
+  .card p { margin-top: 10px; font-size: 16px; font-weight: 500; color: var(--muted); line-height: 1.35; }
+  body.on-plum .card p { color: #4b3a63; }
+  .keys { position: absolute; left: 0; right: 0; bottom: 56px; justify-content: center; display: flex; }
+</style></head><body class="on-plum">
+<div class="grid-bg"></div>
+<i class="spark l" style="left:260px;top:110px;--c:var(--yellow)"></i>
+<i class="spark s" style="left:180px;top:200px;--c:var(--pink)"></i>
+<i class="spark xl" style="left:960px;top:120px;--c:var(--lilac)"></i>
+<i class="spark" style="left:1120px;top:330px;--c:var(--orange)"></i>
+<i class="bit" style="left:120px;top:300px;--c:var(--sky)"></i>
+<i class="bit" style="left:1160px;top:380px;--c:var(--yellow)"></i>
 <header>
-  <img class="logo" src="../../brand/logo.svg" alt="">
+  <img class="mascot" src="../../brand/logo-512.png" alt="">
   <h1>Nothing leaves <span class="grad">your computer.</span></h1>
   <p class="sub">No account, no uploads, no tracking. Your screenshots go to your clipboard or your Downloads folder, and nowhere else.</p>
 </header>

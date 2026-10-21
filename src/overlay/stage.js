@@ -16,10 +16,16 @@
     // Constructable stylesheets avoid a <style> node the page could observe via
     // a MutationObserver on the host. Falls back where unsupported.
     if ('adoptedStyleSheets' in Document.prototype && 'replaceSync' in CSSStyleSheet.prototype) {
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync(cssText);
-      shadow.adoptedStyleSheets = [sheet];
-      return;
+      try {
+        const sheet = new CSSStyleSheet();
+        sheet.replaceSync(cssText);
+        shadow.adoptedStyleSheets = [sheet];
+        return;
+      } catch {
+        /* Firefox content scripts see the page through Xray wrappers, and a
+         * sheet built in the script's own compartment can be refused there.
+         * A <style> in the shadow root styles it just the same. */
+      }
     }
     const style = document.createElement('style');
     style.textContent = cssText;
@@ -192,5 +198,5 @@
     };
   }
 
-  NC.define('stage', { mount, HOST_ID });
+  NC.define('stage', { mount });
 })();

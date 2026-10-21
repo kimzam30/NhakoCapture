@@ -265,5 +265,5 @@
     return dev;
   }
 
-  NC.define('render', { render, drawOp });
+  NC.define('render', { render });
 })();

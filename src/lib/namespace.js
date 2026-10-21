@@ -64,6 +64,15 @@
       return mod;
     },
 
+    /* Builds a node from one of the modules' own constant SVG strings. Parsed
+     * as XML and imported, never assigned through innerHTML: Firefox's add-on
+     * review flags every innerHTML write, and no markup here ever needs it. */
+    svg(markup) {
+      const xml = markup.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      const doc = new DOMParser().parseFromString(xml, 'image/svg+xml');
+      return document.importNode(doc.documentElement, true);
+    },
+
     // Set by inject.js once an overlay is mounted; null when nothing is up.
     destroy: null,
     // Set by inject.js: removes its runtime message listener.

@@ -48,11 +48,18 @@
 
   const svg = (n) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICON[n]}</svg>`;
 
+  function label(text) {
+    const span = document.createElement('span');
+    span.className = 'nc-btn__label';
+    span.textContent = text;
+    return span;
+  }
+
   function iconButton(name, label, hint, onClick) {
     const b = document.createElement('button');
     b.type = 'button';
     b.className = 'nc-tool';
-    b.innerHTML = svg(name);
+    b.appendChild(NC.svg(svg(name)));
     b.title = hint ? `${label} (${hint})` : label;
     b.setAttribute('aria-label', label);
     b.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); onClick(); });
@@ -123,7 +130,9 @@
       b.type = 'button';
       b.className = 'nc-weight';
       b.dataset.weight = name;
-      b.innerHTML = `<i style="width:${value + 2}px;height:${value + 2}px"></i>`;
+      const dot = document.createElement('i');
+      dot.style.width = dot.style.height = `${value + 2}px`;
+      b.appendChild(dot);
       b.title = `${name[0].toUpperCase()}${name.slice(1)} line`;
       b.setAttribute('aria-label', b.title);
       b.addEventListener('click', (e) => {
@@ -147,7 +156,7 @@
     const copyBtn = document.createElement('button');
     copyBtn.type = 'button';
     copyBtn.className = 'nc-btn nc-btn--primary';
-    copyBtn.innerHTML = `${svg('copy')}<span class="nc-btn__label">Copy</span>`;
+    copyBtn.append(NC.svg(svg('copy')), label('Copy'));
     copyBtn.setAttribute('aria-label', 'Copy to clipboard');
     copyBtn.title = `Copy (${MOD}C)`;
     copyBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); actions.copy(); });
@@ -155,7 +164,7 @@
     const saveBtn = document.createElement('button');
     saveBtn.type = 'button';
     saveBtn.className = 'nc-btn';
-    saveBtn.innerHTML = `${svg('save')}<span class="nc-btn__label">Save</span>`;
+    saveBtn.append(NC.svg(svg('save')), label('Save'));
     saveBtn.setAttribute('aria-label', 'Save image');
     saveBtn.title = `Save (${MOD}S)`;
     saveBtn.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); actions.save(); });
@@ -234,5 +243,5 @@
     };
   }
 
-  NC.define('rail', { create, TOOLS, INKS });
+  NC.define('rail', { create });
 })();

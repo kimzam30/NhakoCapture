@@ -96,15 +96,19 @@
   }
 
   async function main() {
-    const KEYS = ['capturedImage', 'captureBlobUrl', 'captureCapped'];
-    const stored = await chrome.storage.local.get(KEYS);
+    /* This window's capture is filed under the nonce in its URL, so it can
+     * only ever read its own -- never one meant for a window opened just
+     * after it. No nonce, nothing to read: the empty state below. */
+    const nonce = location.hash.slice(1);
+    const key = nonce ? `nc-editor:${nonce}` : null;
+    const stored = key ? (await chrome.storage.session.get(key))[key] ?? {} : {};
     // One-shot: the capture is consumed so reopening this window cannot resurrect
     // a screenshot the user thought they had dismissed.
-    await chrome.storage.local.remove(KEYS);
+    if (key) await chrome.storage.session.remove(key);
 
     /* Two populations arrive here now. A restricted-page capture is a data URL
-     * held in storage; a full-page capture is a blob URL, because the stitched
-     * image would not fit in storage's quota. Everything downstream is
+     * held in storage.session; a full-page capture is a blob URL, because the
+     * stitched image would not fit in its quota. Everything downstream is
      * identical -- an <img> does not care which kind of URL it was given. */
     const source = stored.capturedImage ?? stored.captureBlobUrl;
     if (!source) {

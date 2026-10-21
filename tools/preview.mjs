@@ -1388,14 +1388,27 @@ async function main() {
       const css = STYLES.map(read).join('\n');
 
       const stored = { capturedImage: capture };
+      /* The editor finds its capture under the nonce in its own URL. The
+         query string changes on every navigation, not just the nonce: a URL
+         that differs from the one showing only in its fragment is an in-page
+         hash change rather than a load, and the editor would never run again.
+         The shims answer only the key matching the URL's own nonce, so a read
+         under any other key comes back empty. */
+      let editorLoads = 0;
+      const editorUrl = () => {
+        editorLoads += 1;
+        return `file://${join(ROOT, 'src/fallback/editor.html')}` +
+               `?load=${editorLoads}#preview-${editorLoads}`;
+      };
+      const OWN_KEY = `'nc-editor:' + location.hash.slice(1)`;
       /* A factory, not a string-replace on a built shim: the replace has to
          match an interpolated JSON blob exactly, and when it silently does not
          the test still runs -- against the wrong fixture. */
       const makeShim = (st) => `
         globalThis.__sent = [];
         globalThis.chrome = {
-          storage: { local: {
-            get: async () => (${JSON.stringify(st)}),
+          storage: { session: {
+            get: async (k) => (k === ${OWN_KEY} ? { [k]: ${JSON.stringify(st)} } : {}),
             remove: async () => {},
           }},
           runtime: {
@@ -1424,7 +1437,7 @@ async function main() {
       const shim = makeShim(stored);
       const { identifier } = await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: shim });
 
-      await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+      await cdp.send('Page.navigate', { url: editorUrl() });
       await sleep(900);
 
       const mounted = await cdp.eval(`(() => {
@@ -1580,7 +1593,7 @@ async function main() {
         const cappedShim = makeShim({ ...stored, captureCapped: true });
         const { identifier: id2 } = await cdp.send(
           'Page.addScriptToEvaluateOnNewDocument', { source: cappedShim });
-        await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+        await cdp.send('Page.navigate', { url: editorUrl() });
         await sleep(900);
 
         const capped = JSON.parse(await cdp.eval(`(() => {
@@ -1633,7 +1646,7 @@ async function main() {
 
       /* Resizing the window must not destroy the capture.
        *
-       * The shim above answers storage.local.get with the same fixture every
+       * The shim above answers storage.session.get with the same fixture every
        * time, which is what let this bug live: the real thing is a ONE-SHOT --
        * the editor removes the keys the moment it has read them, so nothing is
        * left to re-read. The old resize handler reloaded the window to re-fit,
@@ -1649,11 +1662,11 @@ async function main() {
         const oneShotShim = `
           globalThis.__sent = [];
           globalThis.__reads = 0;
-          let store = ${JSON.stringify(stored)};
+          let store = { [${OWN_KEY}]: ${JSON.stringify(stored)} };
           globalThis.chrome = {
-            storage: { local: {
-              get: async () => { globalThis.__reads += 1; return { ...store }; },
-              remove: async () => { store = {}; },
+            storage: { session: {
+              get: async (k) => { globalThis.__reads += 1; return { [k]: store[k] }; },
+              remove: async (k) => { delete store[k]; },
             }},
             runtime: {
               getURL: (p) => 'nc-style:' + p,
@@ -1669,7 +1682,7 @@ async function main() {
           'Page.addScriptToEvaluateOnNewDocument', { source: oneShotShim });
 
         await cdp.send('Emulation.clearDeviceMetricsOverride');
-        await cdp.send('Page.navigate', { url: `file://${join(ROOT, 'src/fallback/editor.html')}` });
+        await cdp.send('Page.navigate', { url: editorUrl() });
         await sleep(900);
 
         // Draw a mark, so the remount has annotation state to carry as well.

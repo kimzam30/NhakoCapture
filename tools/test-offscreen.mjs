@@ -47,7 +47,8 @@ function makeNode(tag) {
   };
 }
 
-function loadOffscreen({ apiThrows = false, execAccepts = true, swallowEvent = false } = {}) {
+function loadOffscreen({ apiThrows = false, execAccepts = true, swallowEvent = false,
+                        inBackground = false } = {}) {
   const body = makeNode('body');
   const listeners = {};
   const execCalls = [];
@@ -115,6 +116,7 @@ function loadOffscreen({ apiThrows = false, execAccepts = true, swallowEvent = f
     chrome: {
       runtime: { onMessage: { addListener: (fn) => { messageListener = fn; } } },
     },
+    location: { pathname: inBackground ? '/_generated_background_page.html' : '/src/offscreen.html' },
     console: { warn() {}, error() {}, log() {} },
     Promise, Error, String, JSON, Set, Math, Number, RegExp, Array, Object,
   };
@@ -125,6 +127,7 @@ function loadOffscreen({ apiThrows = false, execAccepts = true, swallowEvent = f
   return {
     sandbox, body, listeners, execCalls, written, revoked, selection,
     copyEvent: () => lastCopyEvent,
+    listening: () => messageListener !== null,
     message: (msg) => new Promise((resolve) => {
       const handled = messageListener(msg, {}, resolve);
       if (handled === false) resolve(undefined);
@@ -254,6 +257,16 @@ const PNG = 'data:image/png;base64,AAAA';
 
   await t.message({ target: 'nc-offscreen', op: 'revoke-blob-url', url: made.url });
   eq('revoking twice does not double-revoke', t.revoked.length, 1);
+}
+
+/* --- in-process mode (Firefox background page) ---------------------------- */
+{
+  const t = loadOffscreen({ inBackground: true });
+  ok('a background page does not listen for offscreen mail', !t.listening());
+  const made = await t.sandbox.ncOffscreenHandle({ op: 'make-blob-url', dataUrl: PNG });
+  ok('but the handler is callable directly', made?.ok === true && String(made.url).startsWith('blob:'));
+  const copied = await t.sandbox.ncOffscreenHandle({ op: 'copy-image', dataUrl: PNG });
+  ok('and copies in-process', copied?.ok === true && copied.via === 'clipboard-api');
 }
 
 console.log(`\noffscreen: ${pass} passed, ${failures.length} failed\n`);

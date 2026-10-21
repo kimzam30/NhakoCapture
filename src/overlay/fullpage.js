@@ -412,7 +412,6 @@
     run,
     hasContentBelowFold,
     documentHeight,
-    FOLD_SLACK,
     MIN_CAPTURE_INTERVAL,
   });
 })();

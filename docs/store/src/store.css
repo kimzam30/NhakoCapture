@@ -1,21 +1,30 @@
-/* Chrome Web Store graphics. Same stage as docs/launch/poster.html: pale
-   Apple-white ground, soft pink and lavender light, one big headline with a
-   solid pink line, and the real product in a window. Rendered by
-   tools/render-store.mjs at the exact sizes the store asks for.
+/* Store graphics, pixel-playful. Everything here is taken from the camera
+   mascot in docs/brand: its orange ground, lilac body, plum outline, and the
+   pink-over-yellow stripe across its middle. Hard 4px edges, stepped
+   shadows, no blur and no gradients except the stripe.
 
-   Inter, not San Francisco: these images are distributed artwork, and SF's
-   licence only covers mockups for Apple platforms. Inter is the closest open
-   face. */
+   Rendered by tools/render-store.mjs at the exact sizes the stores accept.
+   Pixelify Sans for headlines and labels, Inter for anything you read. */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Pixelify+Sans:wght@500;600&family=Silkscreen&display=block");
+
 :root {
-  --ink: #1d1d1f;
-  --muted: #6e6e73;
-  --bg: #fbfbfd;
-  --plum: #4a1942;
-  /* Solid accents, no gradient text. --pink carries the big headline line;
-     --pink-ink is a shade deeper so small text on the pale ground stays
-     readable (4.6:1). */
-  --pink: #ec4899;
-  --pink-ink: #db2777;
+  /* Straight from logo-512.png. */
+  --orange: #ff9d5c;
+  --lilac: #b48cff;
+  --lilac-pale: #d8c4ff;
+  --plum: #2a1840;
+  --plum-mid: #5a4a80;
+  --pink: #ff5fa8;
+  --yellow: #ffd84d;
+  --blue: #4f7cf0;
+  --sky: #7fb0ff;
+  --red: #ff4b5c;
+  --cream: #fff4e8;
+
+  --ink: var(--plum);
+  --muted: #4b3a63;      /* body copy on the light grounds, >= 7:1 */
+  --bg: var(--orange);
+  --px: 4px;             /* one "pixel" of the artwork */
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { background: var(--bg); overflow: hidden; }
@@ -24,78 +33,153 @@ body {
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
   position: relative;
-  font-feature-settings: "ss01", "cv11";
 }
 
-.glow {
+/* Grounds. A faint pixel grid so flat colour still reads as a game screen. */
+.grid-bg {
   position: absolute; inset: 0; pointer-events: none;
-  background:
-    radial-gradient(520px 380px at 22% 70%, rgba(255, 120, 190, .20), transparent 70%),
-    radial-gradient(560px 420px at 80% 40%, rgba(139, 108, 240, .17), transparent 70%),
-    radial-gradient(900px 420px at 50% 110%, rgba(255, 214, 236, .65), transparent 70%);
+  background-image:
+    linear-gradient(rgba(42, 24, 64, .045) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(42, 24, 64, .045) 2px, transparent 2px);
+  background-size: 32px 32px;
+}
+body.on-lilac { --bg: var(--lilac); --muted: var(--plum); } /* #4b3a63 drops to 3.9:1 here */
+body.on-cream { --bg: var(--cream); }
+body.on-yellow { --bg: var(--yellow); }
+body.on-plum { --bg: var(--plum); --ink: var(--cream); --muted: #e6dcf5; }
+body.on-plum .grid-bg {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, .05) 2px, transparent 2px),
+    linear-gradient(90deg, rgba(255, 255, 255, .05) 2px, transparent 2px);
 }
 
+/* The mascot. Its own art has an orange ground, so it always sits in a
+   framed tile. */
+.mascot {
+  display: block; image-rendering: pixelated;
+  border: var(--px) solid var(--plum);
+  box-shadow: var(--px) var(--px) 0 var(--plum), calc(var(--px) * 2) calc(var(--px) * 2) 0 rgba(42, 24, 64, .35);
+}
 .brand {
-  display: inline-flex; align-items: center; gap: 12px;
-  font-size: 20px; font-weight: 600; letter-spacing: -.015em;
+  display: inline-flex; align-items: center; gap: 14px;
+  font-family: "Pixelify Sans", monospace; font-size: 30px; font-weight: 600; letter-spacing: .01em;
 }
-.brand img { width: 40px; height: 40px; filter: drop-shadow(0 2px 6px rgba(74, 25, 66, .18)); }
+.brand .mascot { width: 60px; height: 60px; border-width: 3px; box-shadow: 3px 3px 0 var(--plum); }
 
+/* Type. */
 .kicker {
-  display: inline-block; font-size: 15px; font-weight: 600; letter-spacing: .02em;
-  color: var(--pink-ink);
+  display: inline-block; font-family: "Silkscreen", monospace; font-size: 16px; letter-spacing: .06em;
+  color: var(--cream); background: var(--plum); padding: 6px 12px 7px;
+  box-shadow: var(--px) var(--px) 0 var(--pink);
 }
-h1 { font-weight: 750; letter-spacing: -.045em; line-height: 1.02; }
-.grad { color: var(--pink); }
-.sub { color: var(--muted); letter-spacing: -.012em; line-height: 1.4; }
+body.on-plum .kicker { color: var(--plum); background: var(--yellow); box-shadow: var(--px) var(--px) 0 var(--pink); }
+h1 {
+  font-family: "Pixelify Sans", monospace; font-weight: 600;
+  letter-spacing: 0; line-height: 1.04;
+}
+/* The second line of a headline: white with a hard plum drop, like a title
+   screen. Readable on every ground because the plum carries the shape. */
+.grad { color: #fff; text-shadow: var(--px) var(--px) 0 var(--plum); }
+body.on-cream .grad { color: var(--pink); }
+body.on-plum .grad { color: var(--yellow); text-shadow: var(--px) var(--px) 0 #ff6f3c; }
+.sub { color: var(--muted); letter-spacing: -.01em; line-height: 1.45; font-weight: 500; }
 
-/* The browser window around a real capture. */
-.window {
-  position: absolute; border-radius: 14px; overflow: hidden; background: #fff;
+/* The mascot's stripe, as an underline or a divider. */
+.stripe {
+  display: block; height: 16px;
+  background: linear-gradient(var(--pink) 0 50%, var(--yellow) 50% 100%);
+  border-top: var(--px) solid var(--plum); border-bottom: var(--px) solid var(--plum);
+}
+
+/* A chunky pixel box: plum outline with notched corners, hard stepped
+   shadow. The corners come from four offset shadows instead of a border, so
+   the box keeps its pixel silhouette at any size. */
+.px-box {
+  background: #fff;
   box-shadow:
-    0 0 0 1px rgba(0, 0, 0, .08),
-    0 30px 60px -20px rgba(74, 25, 66, .35),
-    0 14px 30px -18px rgba(0, 0, 0, .25);
+    0 calc(var(--px) * -1) 0 0 var(--plum),
+    0 var(--px) 0 0 var(--plum),
+    calc(var(--px) * -1) 0 0 0 var(--plum),
+    var(--px) 0 0 0 var(--plum),
+    calc(var(--px) * 2) calc(var(--px) * 2) 0 0 var(--plum);
 }
-.window .bar {
-  height: 40px; background: #f3f2f5; border-bottom: 1px solid rgba(0,0,0,.07);
-  display: flex; align-items: center; padding: 0 14px; gap: 8px; position: relative;
+
+/* The browser window around a real capture. Bar contents come from store.js
+   so the Chrome and Firefox renders differ only there. */
+.window {
+  position: absolute; background: #fff;
+  border: var(--px) solid var(--plum);
+  box-shadow: 8px 8px 0 var(--plum);
 }
-.window .dot { width: 12px; height: 12px; border-radius: 50%; }
-.window .dot:nth-child(1) { background: #ff5f57; }
-.window .dot:nth-child(2) { background: #febc2e; }
-.window .dot:nth-child(3) { background: #28c840; }
-.window .url {
-  position: absolute; left: 50%; transform: translateX(-50%);
-  width: 46%; height: 24px; border-radius: 7px; background: #e7e5ea;
-  font-size: 12px; color: #6e6e73; display: flex; align-items: center; justify-content: center; gap: 6px;
-}
-.window .ext {
-  position: absolute; right: 12px; width: 26px; height: 26px; border-radius: 7px;
-  background: #fde9f7; box-shadow: inset 0 0 0 1.5px #ff91e7;
-  display: flex; align-items: center; justify-content: center;
-}
-.window .ext img { width: 18px; height: 18px; }
 .window > img.shot { display: block; width: 100%; }
+.bar {
+  height: 44px; background: var(--lilac-pale); border-bottom: var(--px) solid var(--plum);
+  display: flex; align-items: center; padding: 0 14px; gap: 10px; position: relative;
+  font-family: "Inter", sans-serif;
+}
+.bar .dot { width: 12px; height: 12px; border: 2px solid var(--plum); flex: none; }
+.bar .dot:nth-child(1) { background: var(--red); }
+.bar .dot:nth-child(2) { background: var(--yellow); }
+.bar .dot:nth-child(3) { background: #3ccf6e; }
+.bar .nav { display: flex; gap: 12px; margin-left: 14px; color: var(--plum-mid); font-size: 15px; font-weight: 700; }
+.bar .url {
+  height: 28px; background: #fff; border: 2px solid var(--plum);
+  font-size: 13px; color: var(--plum); font-weight: 500;
+  display: flex; align-items: center; gap: 8px; padding: 0 12px; white-space: nowrap; overflow: hidden;
+}
+.bar .lock { width: 9px; height: 10px; background: var(--plum-mid); position: relative; flex: none; margin-top: 3px; }
+.bar .lock::before { content: ""; position: absolute; left: 1px; top: -6px; width: 3px; height: 4px; border: 2px solid var(--plum-mid); border-bottom: 0; }
+.bar .tools { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.bar .ext {
+  width: 30px; height: 30px; border: 2px solid var(--plum); background: var(--orange);
+  box-shadow: 2px 2px 0 var(--plum); flex: none;
+}
+.bar .ext img { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
+.bar .glyph { color: var(--plum-mid); font-size: 16px; font-weight: 700; line-height: 1; }
+
+/* Chrome: centred pill omnibox, puzzle piece, profile. */
+.bar.chrome .url { position: absolute; left: 50%; transform: translateX(-50%); width: 46%; justify-content: center; border-radius: 14px; }
+.bar.chrome .avatar { width: 22px; height: 22px; border-radius: 50%; background: var(--sky); border: 2px solid var(--plum); }
+/* Firefox: wide square-ish address field after the nav buttons, shield and
+   star, hamburger menu. */
+.bar.firefox .url { flex: 1; margin: 0 6px; border-radius: 6px; justify-content: flex-start; }
+.bar.firefox .url .star { margin-left: auto; color: var(--plum-mid); font-size: 15px; }
+.bar.firefox .shield { width: 12px; height: 14px; background: var(--plum-mid); clip-path: polygon(0 0, 100% 0, 100% 55%, 50% 100%, 0 55%); flex: none; }
+.bar.firefox .burger { width: 16px; height: 12px; flex: none;
+  background: linear-gradient(var(--plum-mid) 0 2px, transparent 2px 5px, var(--plum-mid) 5px 7px, transparent 7px 10px, var(--plum-mid) 10px 12px); }
 
 /* Keycaps for the shortcut. */
-.keys { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 15px; }
+.keys { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); font-size: 16px; font-weight: 600; }
 .cap {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 38px; height: 38px; padding: 0 10px; border-radius: 9px;
-  background: linear-gradient(#fff, #f3f3f6);
-  box-shadow: 0 0 0 1px rgba(0,0,0,.08), 0 2px 0 rgba(0,0,0,.08), 0 6px 14px -6px rgba(0,0,0,.18);
-  font-size: 17px; font-weight: 500; color: var(--ink);
+  min-width: 42px; height: 42px; padding: 0 10px 4px;
+  background: #fff; color: var(--plum);
+  font-size: 18px; font-weight: 700;
+  border: 3px solid var(--plum);
+  box-shadow: inset 0 -5px 0 var(--lilac-pale), 3px 3px 0 var(--plum);
 }
 .keys .or { margin: 0 4px; }
+body.on-plum .cap { border-color: var(--cream); box-shadow: inset 0 -5px 0 var(--lilac-pale), 3px 3px 0 var(--orange); }
 
 /* Feature chips under a headline. */
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 14px 12px; }
 .chip {
-  font-size: 14px; font-weight: 550; padding: 7px 12px; border-radius: 999px;
-  background: #fff; box-shadow: 0 0 0 1px rgba(74, 25, 66, .10), 0 4px 10px -6px rgba(74, 25, 66, .25);
-  color: var(--plum);
+  font-size: 15px; font-weight: 600; padding: 6px 12px;
+  background: #fff; color: var(--plum);
+  border: 3px solid var(--plum); box-shadow: 3px 3px 0 var(--plum);
 }
+.chip:nth-child(4n+1) { background: var(--yellow); }
+.chip:nth-child(4n+3) { background: var(--sky); }
 
-/* Little butterflies, as on the poster. */
-.fly { position: absolute; width: 40px; opacity: .9; }
+/* Pixel sparkles: a 7x7 four-point star, tinted by background colour.
+   Size them in multiples of 7px so every pixel lands on whole pixels. */
+.spark {
+  position: absolute; width: 28px; height: 28px; background: var(--c, #fff);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v2h-1zM2 2h3v1h-3zM0 3h7v1h-7zM2 4h3v1h-3zM3 5h1v2h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+          mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 7 7' shape-rendering='crispEdges'%3E%3Cpath d='M3 0h1v2h-1zM2 2h3v1h-3zM0 3h7v1h-7zM2 4h3v1h-3zM3 5h1v2h-1z'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+.spark.s { width: 21px; height: 21px; }
+.spark.l { width: 42px; height: 42px; }
+.spark.xl { width: 56px; height: 56px; }
+/* A plain square "pixel" for scatter. */
+.bit { position: absolute; width: 8px; height: 8px; background: var(--c, #fff); }

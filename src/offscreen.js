@@ -141,35 +141,40 @@ function revokeBlobUrl(url) {
   return { ok: true };
 }
 
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-  if (!msg || msg.target !== TARGET) return false;
-
-  (async () => {
-    try {
-      switch (msg.op) {
-        /* The readiness handshake. createDocument resolving tells the service
-         * worker this document EXISTS; only a reply to this tells it the
-         * listener below is actually attached. Cheap on purpose -- it is sent
-         * on a retry loop and must never be the slow part. */
-        case 'ping':
-          sendResponse({ ok: true });
-          break;
-        case 'copy-image':
-          sendResponse(await copyImage(msg.dataUrl));
-          break;
-        case 'make-blob-url':
-          sendResponse(await makeBlobUrl(msg.dataUrl));
-          break;
-        case 'revoke-blob-url':
-          sendResponse(revokeBlobUrl(msg.url));
-          break;
-        default:
-          sendResponse({ ok: false, error: `unknown op "${msg.op}"` });
-      }
-    } catch (err) {
-      sendResponse({ ok: false, error: String(err) });
+/* One entry point for every op, so the same jobs can run without an
+ * offscreen document. Firefox has no chrome.offscreen, but its background is
+ * an event page with a DOM, URL.createObjectURL and (with clipboardWrite) the
+ * Clipboard API -- so there this file is loaded straight into the background
+ * and background.js calls ncOffscreenHandle directly. */
+async function ncOffscreenHandle(msg) {
+  try {
+    switch (msg.op) {
+      /* The readiness handshake. createDocument resolving tells the service
+       * worker this document EXISTS; only a reply to this tells it the
+       * listener below is actually attached. Cheap on purpose -- it is sent
+       * on a retry loop and must never be the slow part. */
+      case 'ping':
+        return { ok: true };
+      case 'copy-image':
+        return await copyImage(msg.dataUrl);
+      case 'make-blob-url':
+        return await makeBlobUrl(msg.dataUrl);
+      case 'revoke-blob-url':
+        return revokeBlobUrl(msg.url);
+      default:
+        return { ok: false, error: `unknown op "${msg.op}"` };
     }
-  })();
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
 
-  return true; // response is async
-});
+/* Only the real offscreen document listens. Loaded into a background page
+ * there is nobody to message: the background calls the handler itself. */
+if (/\/offscreen\.html$/.test(globalThis.location?.pathname ?? '')) {
+  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+    if (!msg || msg.target !== TARGET) return false;
+    ncOffscreenHandle(msg).then(sendResponse);
+    return true; // response is async
+  });
+}

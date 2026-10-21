@@ -289,5 +289,5 @@
     };
   }
 
-  NC.define('selection', { create, DIRECTIONS });
+  NC.define('selection', { create });
 })();

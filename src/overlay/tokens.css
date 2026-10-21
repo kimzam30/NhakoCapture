@@ -36,8 +36,6 @@
 :root {
   /* --- Brand ------------------------------------------------------------- */
   --nc-pink:            #ff91e7;  /* THE Nhako accent (Nhako Tools --pink-300) */
-  --nc-pink-soft:       #f49ac1;  /* NeraOS pink                              */
-  --nc-lavender:        #c3a6f0;  /* NeraOS lavender                          */
   --nc-plum:            #2a0f26;  /* ink on pink/lavender fills               */
 
   /* --- Accent ------------------------------------------------------------ */
@@ -47,7 +45,6 @@
        plum text on pink ........... 8.75:1 AAA                             */
   --nc-accent:          var(--nc-pink);
   --nc-accent-hover:    #ffb0ee;
-  --nc-accent-active:   #f07ad6;
 
   /* Borders, focus rings and active-tool indicators. Kept as its own name so
      forced-colors can hand it to the OS without touching the fills. */
@@ -101,10 +98,8 @@
   --nc-border-strong:   rgba(255, 255, 255, 0.16);
   /* The top edge of every glass panel catches a little light. */
   --nc-edge-light:      inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  --nc-border-focus:    var(--nc-accent-bright);
 
   /* --- Status ------------------------------------------------------------ */
-  --nc-success:         #7fdca0;
   --nc-warning:         #ffd166;  /* NhakoSearch gold                        */
   --nc-error:           #ff453a;
 
@@ -157,12 +152,6 @@
   --nc-ink-white:       #ffffff;
   --nc-ink-black:       #1c1c1e;
 
-  --nc-highlight-alpha: 0.45;   /* marker ink, composited with multiply      */
-  --nc-blur-radius:     8px;    /* ctx.filter blur for redaction             */
-  --nc-stroke-thin:     2px;
-  --nc-stroke-medium:   4px;
-  --nc-stroke-thick:    8px;
-
   /* --- Spacing ----------------------------------------------------------- */
   /* 4px base. Dense chrome, not an editorial layout. */
   --nc-space-0:  0;
@@ -183,8 +172,6 @@
      page's CSP anyway, and fetching one would break the no-network promise. */
   --nc-font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text",
              "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
-  --nc-font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas,
-                  "Liberation Mono", monospace;
 
   --nc-text-xs:   11px;   /* badge, swatch labels    */
   --nc-text-sm:   12px;   /* rail labels             */

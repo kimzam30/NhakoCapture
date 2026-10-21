@@ -2,23 +2,24 @@
 <link rel="stylesheet" href="store.css">
 <style>
   html, body { width: 1280px; height: 800px; }
-  .copy { position: absolute; left: 64px; top: 150px; width: 360px; }
-  h1 { margin-top: 14px; font-size: 54px; }
-  .sub { margin-top: 20px; font-size: 19px; }
-  .chips { margin-top: 28px; }
-  .window { left: 470px; top: 120px; width: 930px; }
-</style></head><body>
-<div class="glow"></div>
-<img class="fly" src="butterfly.svg" style="left:300px;top:640px;width:46px;transform:rotate(-12deg)">
+  .copy { position: absolute; left: 60px; top: 130px; width: 380px; }
+  h1 { margin-top: 22px; font-size: 58px; }
+  .sub { margin-top: 22px; font-size: 19px; }
+  .chips { margin-top: 30px; }
+  .window { left: 480px; top: 110px; width: 930px; }
+</style></head><body class="on-lilac">
+<div class="grid-bg"></div>
+<i class="spark l" style="left:400px;top:60px;--c:var(--yellow)"></i>
+<i class="spark s" style="left:446px;top:30px;--c:#fff"></i>
+<i class="spark" style="left:340px;top:660px;--c:#fff"></i>
+<i class="spark xl" style="left:1150px;top:30px;--c:var(--orange)"></i>
+<i class="bit" style="left:80px;top:700px;--c:var(--pink)"></i>
 <div class="copy">
-  <span class="kicker">MARK IT UP</span>
+  <span class="kicker">Mark it up</span>
   <h1>Draw right <span class="grad">on the page.</span></h1>
   <p class="sub">No new tab, no separate editor. Point at things, label them, highlight what matters. Every mark can be undone.</p>
   <div class="chips"><span class="chip">Pen</span><span class="chip">Arrow</span><span class="chip">Highlighter</span><span class="chip">Text</span><span class="chip">Blur</span><span class="chip">Magnifier</span><span class="chip">7 colours</span><span class="chip">Undo &amp; redo</span></div>
 </div>
-<div class="window">
-  <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
-    <div class="url">🔒 meridian.example</div></div>
-  <img class="shot" src="../raw/markup.png" alt="">
-</div>
+<div class="window" data-url="meridian.example"><img class="shot" src="../raw/markup.png" alt=""></div>
+<script src="store.js"></script>
 </body></html>

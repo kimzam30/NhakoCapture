@@ -263,14 +263,13 @@
   flex: none;
 }
 .nc-mark svg { width: 20px; height: 20px; display: block; }
-/* One slow wingbeat as the pill lands -- NeraOS's flap, played once. */
-@keyframes nc-flap {
-  0%, 100% { transform: scaleX(1); }
-  50%      { transform: scaleX(0.55); }
+/* One small hop as the pill lands, the mascot saying hello. */
+@keyframes nc-hop {
+  0%, 100% { transform: translateY(0); }
+  40%      { transform: translateY(-3px); }
 }
 .nc-mark svg {
-  transform-origin: 50% 50%;
-  animation: nc-flap 520ms var(--nc-ease) 260ms 1 both;
+  animation: nc-hop 420ms var(--nc-ease) 260ms 1 both;
 }
 
 .nc-divider {

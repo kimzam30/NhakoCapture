@@ -371,6 +371,7 @@
         return;
       }
       session.finishing = true;
+      const mine = session;
       toolbar.setHint(action === 'copy' ? 'Copying…' : 'Saving…', 'busy');
 
       let res;
@@ -387,7 +388,9 @@
       } catch (err) {
         res = { ok: false, error: String(err) };
       }
-      if (!session) return;
+      /* Torn down -- or torn down and restarted -- while the copy was in
+       * flight. A fresh session is not this one's to touch. */
+      if (session !== mine) return;
       session.finishing = false;
 
       if (res?.ok) {
@@ -517,6 +520,14 @@
          * downscale would have been. */
         let dataUrl = canvas.toDataURL('image/png');
         if (dataUrl.length > MAX_HANDOFF_CHARS) dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+        /* A canvas past the browser's size or memory limit does not throw: it
+         * encodes to the empty "data:," and the editor would open on nothing. */
+        if (dataUrl.length < 32) {
+          if (!session) return;
+          toolbar.setHint('That page is too big to capture in one image', 'error');
+          announcer.say('The whole-page capture did not work.');
+          return;
+        }
         const handoff = await chrome.runtime.sendMessage({
           type: 'nc:full-page-done',
           dataUrl,

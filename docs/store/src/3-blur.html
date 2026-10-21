@@ -2,25 +2,26 @@
 <link rel="stylesheet" href="store.css">
 <style>
   html, body { width: 1280px; height: 800px; }
-  .copy { position: absolute; right: 64px; top: 168px; width: 380px; }
-  h1 { margin-top: 14px; font-size: 54px; }
-  .sub { margin-top: 20px; font-size: 19px; }
-  .note { margin-top: 26px; display: flex; gap: 12px; align-items: flex-start; font-size: 16px; color: var(--plum); line-height: 1.4;
-          background: #fff; border-radius: 14px; padding: 14px 16px; box-shadow: 0 0 0 1px rgba(74,25,66,.10), 0 10px 24px -14px rgba(74,25,66,.35); }
-  .note b { font-size: 20px; line-height: 1; }
-  .window { left: 40px; top: 150px; width: 760px; }
-</style></head><body>
-<div class="glow"></div>
-<img class="fly" src="butterfly.svg" style="left:1150px;top:80px;width:46px;transform:rotate(12deg)">
-<div class="window">
-  <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span>
-    <div class="url">🔒 northwind.example/billing</div></div>
-  <img class="shot" src="../raw/blur.png" alt="">
-</div>
+  .copy { position: absolute; right: 60px; top: 150px; width: 390px; }
+  h1 { margin-top: 22px; font-size: 58px; }
+  .sub { margin-top: 22px; font-size: 19px; }
+  .note { margin-top: 30px; display: flex; gap: 14px; align-items: flex-start; font-size: 16px; font-weight: 600; line-height: 1.4; padding: 14px 16px; }
+  .note b { flex: none; width: 26px; height: 26px; background: var(--pink); color: #fff; display: grid; place-items: center;
+            font-family: "Pixelify Sans", monospace; font-size: 18px; border: 2px solid var(--plum); }
+  .window { left: 44px; top: 150px; width: 760px; }
+</style></head><body class="on-cream">
+<div class="grid-bg"></div>
+<i class="spark xl" style="left:1160px;top:56px;--c:var(--lilac)"></i>
+<i class="spark" style="left:1110px;top:40px;--c:var(--orange)"></i>
+<i class="spark l" style="left:60px;top:70px;--c:var(--pink)"></i>
+<i class="spark s" style="left:850px;top:690px;--c:var(--blue)"></i>
+<i class="bit" style="left:1200px;top:700px;--c:var(--yellow)"></i>
+<div class="window" data-url="northwind.example/billing"><img class="shot" src="../raw/blur.png" alt=""></div>
 <div class="copy">
-  <span class="kicker">PRIVATE DETAILS</span>
+  <span class="kicker">Private details</span>
   <h1>Blur that <span class="grad">really hides.</span></h1>
   <p class="sub">Drag over an email, a card number or a name. The pixels are replaced, not covered, so nobody can un-blur the image you share.</p>
-  <div class="note"><b>✓</b><span>Not a see-through box. The original pixels are gone from the file.</span></div>
+  <div class="note px-box"><b>✓</b><span>Not a see-through box. The original pixels are gone from the file.</span></div>
 </div>
+<script src="store.js"></script>
 </body></html>

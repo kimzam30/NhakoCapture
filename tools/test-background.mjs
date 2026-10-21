@@ -33,8 +33,16 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
                          startFails = false,
                          offscreenSilentFor = 0, offscreenNeverAnswers = false, windowFails = false,
                          existingContexts = 0, createFails = null, overlayUp = false,
-                         activeTabId = null } = {}) {
+                         activeTabId = null, inProcess = false, portClosesOnce = false,
+                         session = {} } = {}) {
   let liveContexts = existingContexts;
+  /* storage.session, shared across loads when the caller passes one in: that
+     is how a test evicts the worker -- a fresh background.js, the same
+     session store. */
+  const store = session;
+  let minted = 0;
+  let portClosed = false;
+  let nextWindowId = 9;
   let sends = 0;
   const calls = [];
   const listeners = {};
@@ -90,6 +98,15 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
             'Could not establish connection. Receiving end does not exist.'
           );
         }
+        /* Delivered, then the document died before answering. */
+        if (portClosesOnce && !portClosed && a[0]?.op && a[0].op !== 'ping') {
+          portClosed = true;
+          throw new Error('The message port closed before a response was received.');
+        }
+        if (a[0]?.op === 'make-blob-url') {
+          minted += 1;
+          return { ok: true, url: `blob:nc/${minted}`, size: 4 };
+        }
         return { ok: true };
       },
     },
@@ -104,13 +121,19 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
         liveContexts = 0;
       },
     },
-    storage: { local: { set: async (...a) => { calls.push({ name: 'storage.set', args: a }); },
-                        remove: async () => {} } },
+    /* Only storage.session exists. A screenshot written to storage.local
+       would land on disk, so the stub has no local area to write it to. */
+    storage: { session: {
+      set: async (...a) => { calls.push({ name: 'storage.set', args: a }); Object.assign(store, structuredClone(a[0])); },
+      get: async (k) => { calls.push({ name: 'storage.get', args: [k] }); return { [k]: structuredClone(store[k]) }; },
+      remove: async (keys) => { calls.push({ name: 'storage.remove', args: [keys] }); for (const k of [].concat(keys)) delete store[k]; },
+    } },
     windows: {
+      onRemoved: { addListener: (fn) => { listeners.windowRemoved = fn; } },
       create: async (...a) => {
         calls.push({ name: 'windows.create', args: a });
         if (windowFails) throw new Error('no room for a window');
-        return { id: 9 };
+        return { id: nextWindowId++ };
       },
     },
     downloads: {
@@ -148,11 +171,27 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     for (const fn of pending) await fn();
   };
 
-  const sandbox = { chrome, fetch, createImageBitmap, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout: idleTimeout, clearTimeout: idleClear, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
+  /* Firefox: no offscreen API, and offscreen.js loaded into the background
+     page beside this file, so its handler is a plain global. */
+  const handled = [];
+  if (inProcess) delete chrome.offscreen;
+  const ncOffscreenHandle = async (msg) => {
+    handled.push(msg);
+    if (msg.op === 'make-blob-url') return { ok: true, url: 'blob:moz-extension://id/1', size: 4 };
+    if (msg.op === 'copy-image') return { ok: true, via: 'clipboard-api' };
+    return { ok: true };
+  };
+
+  const sandbox = { chrome, fetch, createImageBitmap, crypto: globalThis.crypto, console: { warn() {}, log() {}, info() {}, error() {} }, setTimeout: idleTimeout, clearTimeout: idleClear, Date, JSON, String, Number, Math, Set, Map, Promise, RegExp, Error };
+  if (inProcess) sandbox.ncOffscreenHandle = ncOffscreenHandle;
   sandbox.globalThis = sandbox;
   createContext(sandbox);
   runInContext(readFileSync(join(root, 'src/background.js'), 'utf8'), sandbox);
-  return { sandbox, calls, listeners, fireIdle, names: () => calls.map((c) => c.name) };
+  const settle = () => new Promise((r) => setTimeout(r, 10));
+  /* The editor handoffs in storage.session, keyed by nonce. */
+  const handoffs = () => Object.keys(store).filter((k) => k.startsWith('nc-editor:'));
+  return { sandbox, calls, listeners, fireIdle, settle, handled, store, handoffs,
+           names: () => calls.map((c) => c.name) };
 }
 
 /* --- listeners are registered synchronously at top level ----------------- */
@@ -172,6 +211,8 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     'chrome://settings', 'brave://extensions', 'edge://flags', 'about:blank',
     'view-source:https://example.com', 'devtools://devtools/bundled/x.html',
     'chrome-extension://abc/page.html', 'opera://about', 'vivaldi://settings',
+    'moz-extension://abc/page.html', 'resource://gre/x', 'https://addons.mozilla.org/en-US/firefox/',
+    'https://accounts.firefox.com', 'https://support.mozilla.org/kb/x',
     'https://chromewebstore.google.com/detail/x',
     'https://chrome.google.com/webstore/detail/x',
     '', undefined,
@@ -184,6 +225,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     // must not match on prefix alone
     'https://chromewebstore.google.com.evil.com/',
     'https://chrome.google.com/webstoreevil',
+    'https://addons.mozilla.org.evil.com/',
   ]) eq(`allowed: ${url}`, r(url), false);
 
   // the real store, in its various shapes, still must be caught
@@ -248,7 +290,8 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
     seq.indexOf('storage.set') < seq.indexOf('windows.create'));
   const win = calls.find((c) => c.name === 'windows.create');
   eq('opens as a popup', win.args[0].type, 'popup');
-  ok('pointing at the fallback editor', /src\/fallback\/editor\.html$/.test(win.args[0].url));
+  ok('pointing at the fallback editor, with a nonce',
+    /^src\/fallback\/editor\.html#[0-9a-f-]{36}$/.test(win.args[0].url), win.args[0].url);
   ok('sized within sane bounds',
     win.args[0].width >= 720 && win.args[0].width <= 1400 &&
     win.args[0].height >= 520 && win.args[0].height <= 900,
@@ -625,7 +668,7 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
 
 /* --- T7: the full-page handoff -------------------------------------------- */
 {
-  const { sandbox, calls } = loadBackground();
+  const { sandbox, calls, store, handoffs } = loadBackground();
   const res = await sandbox.openFullPageEditor(
     { dataUrl: 'data:image/png;base64,AAAA', width: 2400, height: 12000, capped: false }, 5
   );
@@ -637,14 +680,16 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   );
   eq('the image was minted as a blob, once', minted.length, 1);
 
-  const stored = calls.filter((c) => c.name === 'storage.set').pop().args[0];
+  eq('one handoff', handoffs().length, 1);
+  const stored = store[handoffs()[0]];
   ok('only the URL goes through storage', 'captureBlobUrl' in stored);
   ok('the image itself does not', !('capturedImage' in stored));
   ok('a short string, nowhere near the quota',
      JSON.stringify(stored).length < 500);
 
   const created = calls.filter((c) => c.name === 'windows.create').pop().args[0];
-  eq('the editor window opens', created.url, 'src/fallback/editor.html');
+  eq('the editor window opens on its own handoff', created.url,
+     `src/fallback/editor.html#${handoffs()[0].slice('nc-editor:'.length)}`);
 }
 
 {
@@ -659,20 +704,20 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
 }
 
 {
-  const { sandbox, calls } = loadBackground();
+  const { sandbox, store, handoffs } = loadBackground();
   await sandbox.openFullPageEditor(
     { dataUrl: 'data:image/png;base64,AAAA', width: 2400, height: 12000, capped: true }, 5
   );
-  const stored = calls.filter((c) => c.name === 'storage.set').pop().args[0];
+  const stored = store[handoffs()[0]];
   ok('the cap flag reaches the editor', stored.captureCapped === true);
 }
 
 {
-  const { sandbox, calls } = loadBackground();
+  const { sandbox, store, handoffs } = loadBackground();
   await sandbox.openFullPageEditor(
     { dataUrl: 'data:image/png;base64,AAAA', width: 2400, height: 2000 }, 5
   );
-  const stored = calls.filter((c) => c.name === 'storage.set').pop().args[0];
+  const stored = store[handoffs()[0]];
   ok('an uncapped capture says so', stored.captureCapped === false);
 }
 
@@ -680,10 +725,12 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   /* The leak path. If the window never opens, nothing will ever consume the
      URL, and it pins the whole stitched PNG for the life of the offscreen
      document. This is the failure that costs memory silently. */
-  const { sandbox, calls } = loadBackground({ windowFails: true });
+  const { sandbox, calls, settle, handoffs } = loadBackground({ windowFails: true });
   const res = await sandbox.openFullPageEditor(
     { dataUrl: 'data:image/png;base64,AAAA', width: 2400, height: 2000 }, 5
   );
+  await settle();
+  eq('and its handoff does not linger', handoffs().length, 0);
 
   ok('the failure is reported', res.ok === false);
   const revoked = calls.filter(
@@ -695,11 +742,12 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
 
 {
   // The editor says when it is done with the URL; nothing revokes on a timer.
-  const { listeners, calls } = loadBackground();
+  const { listeners, calls, settle } = loadBackground();
   listeners.message(
     { type: 'nc:capture-consumed', url: 'blob:chrome-extension://testid/abc' },
     { tab: { id: 5 } }, () => {}
   );
+  await settle();
   const revoked = calls.filter(
     (c) => c.name === 'runtime.sendMessage' && c.args[0].op === 'revoke-blob-url'
   );
@@ -708,11 +756,11 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
 }
 
 {
-  // The restricted-page path is untouched and still uses storage.
-  const { sandbox, calls } = loadBackground();
+  // The restricted-page path still hands the image itself over.
+  const { sandbox, calls, store, handoffs } = loadBackground();
   await sandbox.openFallback('data:image/png;base64,AAAA', 5);
 
-  const stored = calls.filter((c) => c.name === 'storage.set').pop().args[0];
+  const stored = store[handoffs()[0]];
   ok('a restricted-page capture still travels as a data URL',
      typeof stored.capturedImage === 'string');
   ok('and mints no blob', !calls.some(
@@ -891,6 +939,197 @@ function loadBackground({ captureFails = false, injectFails = false, cssFails = 
   ok('USER_CANCELED is a cancel', sandbox.isCancel(new Error('USER_CANCELED')));
   ok('"Download canceled" is a cancel too', sandbox.isCancel(new Error('Download canceled')));
   ok('a real failure is not', !sandbox.isCancel(new Error('NETWORK_FAILED')));
+}
+
+/* --- editor handoffs: one per window, in memory only ---------------------
+ *
+ * They used to share one fixed set of storage.local keys: written to disk,
+ * and a second capture opened before the first window had read its own
+ * overwrote it. Now each goes into storage.session under a nonce that only
+ * its own window's URL carries. */
+{
+  const { sandbox, store, calls, handoffs } = loadBackground();
+  await sandbox.openEditorWindow({ captureBlobUrl: 'blob:x/1', captureCapped: true }, {});
+  await sandbox.openEditorWindow({ capturedImage: 'data:image/png;base64,AAAA' }, {});
+
+  eq('two handoffs, two keys', handoffs().length, 2);
+  const urls = calls.filter((c) => c.name === 'windows.create').map((c) => c.args[0].url);
+  const own = urls.map((u) => store[`nc-editor:${u.split('#')[1]}`]);
+  eq('the first window still finds its own capture',
+     own[0], { captureBlobUrl: 'blob:x/1', captureCapped: true });
+  eq('and the second finds only its own',
+     own[1], { capturedImage: 'data:image/png;base64,AAAA' });
+  ok('nothing is written anywhere but storage.session', !('local' in sandbox.chrome.storage));
+}
+
+{
+  /* An editor closed before it read its capture -- or before it decoded its
+     blob, which is when it would have reported it consumed -- must not leave
+     either behind. Before this, an unread blob held the offscreen document
+     open for the rest of the session. */
+  const { sandbox, listeners, calls, settle, handoffs } = loadBackground();
+  await sandbox.openEditorWindow({ captureBlobUrl: 'blob:x/1' }, {});
+  await sandbox.openEditorWindow({ capturedImage: 'data:image/png;base64,AAAA' }, {});
+
+  await listeners.windowRemoved(9);
+  await settle();
+  eq('closing the first window drops only its handoff', handoffs().length, 1);
+  ok('and revokes the blob it never read', calls.some((c) => c.name === 'runtime.sendMessage' &&
+    c.args[0]?.op === 'revoke-blob-url' && c.args[0]?.url === 'blob:x/1'));
+
+  const writes = calls.filter((c) => c.name === 'storage.set').length;
+  await listeners.windowRemoved(42);
+  await settle();
+  eq('an unrelated window closing writes nothing',
+     calls.filter((c) => c.name === 'storage.set').length, writes);
+}
+
+/* --- blob and download state survives the worker -------------------------
+ *
+ * The offscreen document outlives the service worker. A worker evicted while
+ * a Save As dialog was open used to wake with an empty map: the download's
+ * blob was never revoked, and the idle close could take the document down
+ * under the dialog. The same storage.session store is handed to a second,
+ * freshly loaded background to stand in for the eviction. */
+{
+  const session = {};
+  const first = loadBackground({ session });
+  first.listeners.message({ type: 'nc:save', dataUrl: 'data:image/png;base64,AAAA' },
+    { tab: { id: 1 } }, () => {});
+  await first.settle();
+  ok('the download is under way', first.names().includes('downloads.download'));
+
+  const second = loadBackground({ session, existingContexts: 1 });
+  second.sandbox.scheduleOffscreenClose();
+  await second.fireIdle();
+  ok('a woken worker still keeps the document open for the dialog',
+    !second.names().includes('closeDocument'), second.names().join(','));
+
+  await second.listeners.download({ id: 7, state: { current: 'complete' } });
+  await second.settle();
+  ok('and revokes the right blob when the download settles', second.calls.some(
+    (c) => c.name === 'runtime.sendMessage' && c.args[0]?.op === 'revoke-blob-url' &&
+           c.args[0]?.url === 'blob:nc/1'), second.names().join(','));
+
+  await second.fireIdle();
+  ok('after which the document is let go', second.names().includes('closeDocument'),
+    second.names().join(','));
+}
+
+{
+  // A blob handed to an editor window is owed a revoke across an eviction too.
+  const session = {};
+  const first = loadBackground({ session });
+  await first.sandbox.openFullPageEditor(
+    { dataUrl: 'data:image/png;base64,AAAA', width: 800, height: 4000 }, 1);
+
+  const second = loadBackground({ session, existingContexts: 1 });
+  second.sandbox.scheduleOffscreenClose();
+  await second.fireIdle();
+  ok('a woken worker does not close the document under an unread capture',
+    !second.names().includes('closeDocument'), second.names().join(','));
+
+  second.listeners.message({ type: 'nc:capture-consumed', url: 'blob:nc/1' }, {}, () => {});
+  await second.settle();
+  await second.fireIdle();
+  ok('...and does once the editor has read it', second.names().includes('closeDocument'),
+    second.names().join(','));
+}
+
+{
+  // Someone else's download settling is none of our business.
+  const { listeners, calls, settle } = loadBackground();
+  await listeners.download({ id: 99, state: { current: 'complete' } });
+  await settle();
+  ok('a foreign download revokes nothing and writes nothing', !calls.some(
+    (c) => c.name === 'storage.set' ||
+           (c.name === 'runtime.sendMessage' && c.args[0]?.op === 'revoke-blob-url')));
+}
+
+/* --- a delivered message is never sent twice ------------------------------
+ *
+ * "message port closed" means the offscreen document got the message and
+ * went away before replying. For make-blob-url it may already have minted a
+ * blob; a retry would mint a second one that nothing knows to revoke. */
+{
+  const { sandbox, calls } = loadBackground({ portClosesOnce: true });
+  let err = null;
+  await sandbox.askOffscreen('make-blob-url', { dataUrl: 'data:image/png;base64,AAAA' })
+    .catch((e) => { err = e; });
+  ok('the failure surfaces', /message port closed/.test(String(err)), String(err));
+  eq('and the payload was sent exactly once', calls.filter(
+    (c) => c.name === 'runtime.sendMessage' && c.args[0]?.op === 'make-blob-url').length, 1);
+}
+
+{
+  // An undelivered one still gets its second pass.
+  const { sandbox, calls } = loadBackground();
+  let sends = 0;
+  const real = sandbox.chrome.runtime.sendMessage;
+  sandbox.chrome.runtime.sendMessage = async (...a) => {
+    if (a[0]?.op === 'make-blob-url' && sends++ === 0) {
+      calls.push({ name: 'runtime.sendMessage', args: a });
+      throw new Error('Could not establish connection. Receiving end does not exist.');
+    }
+    return real(...a);
+  };
+  const res = await sandbox.askOffscreen('make-blob-url', { dataUrl: 'data:image/png;base64,AAAA' });
+  ok('"receiving end does not exist" is retried', res?.ok === true, JSON.stringify(res));
+  eq('once', calls.filter(
+    (c) => c.name === 'runtime.sendMessage' && c.args[0]?.op === 'make-blob-url').length, 2);
+}
+
+{
+  const { sandbox } = loadBackground();
+  ok('the readiness ping still treats a closed port as not-yet',
+    sandbox.isDisconnected(new Error('The message port closed before a response was received.')));
+  ok('but a payload does not', !sandbox.wasNotDelivered(
+    new Error('The message port closed before a response was received.')));
+}
+
+/* --- a rate-limited press is not reported as a locked page ---------------- */
+{
+  const { sandbox, calls } = loadBackground();
+  sandbox.chrome.tabs.captureVisibleTab = async () => {
+    throw new Error('This request exceeds the MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND quota.');
+  };
+  await sandbox.launch({ id: 3, windowId: 1, url: 'https://example.com' });
+  const title = calls.filter((c) => c.name === 'setTitle').map((c) => c.args[0].title).join('\n');
+  ok('rate limit says try again', /too quickly/.test(title));
+  ok('and not off-limits', !/off-limits/.test(title));
+}
+
+/* --- Firefox: offscreen jobs run in-process ------------------------------ */
+{
+  const { listeners, names, handled } = loadBackground({ inProcess: true });
+  const reply = await new Promise((resolve) =>
+    listeners.message({ type: 'nc:copy', dataUrl: 'data:image/png;base64,AAAA' }, {}, resolve));
+  ok('in-process copy succeeds', reply?.ok === true);
+  ok('no offscreen document is created', !names().includes('createDocument'));
+  ok('no runtime message is sent to an offscreen document', !names().includes('runtime.sendMessage'));
+  eq('the handler got the copy', handled.map((m) => m.op), ['copy-image']);
+
+  const saved = await new Promise((resolve) =>
+    listeners.message({ type: 'nc:save', dataUrl: 'data:image/png;base64,AAAA' }, {}, resolve));
+  ok('in-process save starts a download', saved?.ok === true && saved.downloadId === 7);
+  listeners.download({ id: 7, state: { current: 'complete' } });
+  await new Promise((r) => setTimeout(r, 0));
+  eq('and revokes its blob in-process when it settles',
+    handled.map((m) => m.op), ['copy-image', 'make-blob-url', 'revoke-blob-url']);
+}
+
+{
+  // The editor handoff is the same on Firefox, and so is closing its window.
+  const { sandbox, listeners, handled, handoffs, settle } = loadBackground({ inProcess: true });
+  const res = await sandbox.openFullPageEditor(
+    { dataUrl: 'data:image/png;base64,AAAA', width: 800, height: 4000 }, 1);
+  ok('in-process full-page handoff succeeds', res?.ok === true);
+  eq('through storage.session', handoffs().length, 1);
+  await listeners.windowRemoved(9);
+  await settle();
+  eq('closing its window unread revokes the blob in-process',
+    handled.map((m) => m.op), ['make-blob-url', 'revoke-blob-url']);
+  eq('and drops the handoff', handoffs().length, 0);
 }
 
 console.log(`\nbackground: ${pass} passed, ${failures.length} failed\n`);

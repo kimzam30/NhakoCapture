@@ -2,20 +2,26 @@
  *
  *   node tools/store-shots.mjs     (first: real product shots -> docs/store/raw)
  *   node tools/render-store.mjs    docs/store/src/*.html -> docs/store/*.png
+ *   node tools/render-store.mjs --firefox
+ *                                  the five screenshots with a Firefox-style
+ *                                  browser bar -> docs/store/firefox/*.png
+ *                                  (AMO takes no promo tiles)
  *
  * Every file comes out at exactly the size the store accepts -- it rejects
  * anything else -- and is flattened to RGB, because screenshots with an alpha
  * channel are refused too.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const src = join(root, 'docs/store/src');
-const out = join(root, 'docs/store');
+const firefox = process.argv.includes('--firefox');
+const out = join(root, firefox ? 'docs/store/firefox' : 'docs/store');
+mkdirSync(out, { recursive: true });
 
 const JOBS = [
   ['1-hero', 1280, 800, 'screenshot-1-hero'],
@@ -25,7 +31,7 @@ const JOBS = [
   ['5-private', 1280, 800, 'screenshot-5-private'],
   ['promo-small', 440, 280, 'promo-small-440x280'],
   ['promo-marquee', 1400, 560, 'promo-marquee-1400x560'],
-];
+].filter(([, w]) => !firefox || w === 1280);
 
 const browser = ['google-chrome', 'chromium', 'chromium-browser', 'brave-browser']
   .find((b) => { try { execFileSync('which', [b], { stdio: 'ignore' }); return true; } catch { return false; } });
@@ -40,7 +46,7 @@ for (const [name, w, h, file] of JOBS) {
       '--allow-file-access-from-files', '--force-device-scale-factor=1',
       '--virtual-time-budget=3000', `--user-data-dir=${profile}`,
       `--window-size=${w},${h}`, `--screenshot=${target}`,
-      `file://${join(src, `${name}.html`)}`,
+      `file://${join(src, `${name}.html`)}${firefox ? '?firefox' : ''}`,
     ], { stdio: 'ignore' });
   } finally {
     rmSync(profile, { recursive: true, force: true });
@@ -55,5 +61,5 @@ if im.mode != 'RGB': im.convert('RGB').save(${JSON.stringify(target)})
 im = Image.open(${JSON.stringify(target)})
 print(im.size[0], im.size[1], im.mode)`]).toString().trim();
   if (check !== `${w} ${h} RGB`) throw new Error(`render-store: ${file} came out ${check}, wanted ${w} ${h} RGB`);
-  console.log(`wrote docs/store/${file}.png (${check})`);
+  console.log(`wrote ${target.slice(root.length + 1)} (${check})`);
 }

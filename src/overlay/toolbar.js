@@ -44,15 +44,20 @@
     close: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
   };
 
-  /* Drawn for 18px: the Nhako family butterfly with its outline dropped, which on
-   * dark glass would only thicken it. Pink over lavender, pale body. */
-  const BUTTERFLY =
-    '<svg viewBox="0 0 24 24">' +
-    '<path d="M11.4 11.2C10.9 8.4 8.8 5.6 6.2 5.8 3.8 6 3.6 9.2 5.6 11 7 12.2 9.4 12.4 11.4 12.2Z" fill="#ff91e7"/>' +
-    '<path d="M12.6 11.2C13.1 8.4 15.2 5.6 17.8 5.8 20.2 6 20.4 9.2 18.4 11 17 12.2 14.6 12.4 12.6 12.2Z" fill="#ff91e7"/>' +
-    '<path d="M11.4 13C9.2 13 7.2 14 7.1 15.8 7 17.5 8.7 18.3 10 17.5 11.1 16.8 11.4 15.2 11.4 13Z" fill="#c3a6f0"/>' +
-    '<path d="M12.6 13C14.8 13 16.8 14 16.9 15.8 17 17.5 15.3 18.3 14 17.5 12.9 16.8 12.6 15.2 12.6 13Z" fill="#c3a6f0"/>' +
-    '<rect x="11.25" y="8.6" width="1.5" height="9.4" rx=".75" fill="#f7f1f9"/>' +
+  /* The NhakoCapture mascot -- the purple pixel camera from the store icon --
+   * redrawn on a 12px grid so it stays crisp at 20px on dark glass: buttons,
+   * eyes, the pink and yellow stripes, the blue lens and its flash. */
+  const MASCOT =
+    '<svg viewBox="0 0 12 12" shape-rendering="crispEdges">' +
+    '<path fill="#5a3f8f" d="M2 0h2v1h-2zM1 1h4v1h-4z"/>' +
+    '<path fill="#ff4d5e" d="M8 0h2v1h-2zM7 1h4v1h-4z"/>' +
+    '<path fill="#b48cff" d="M0 2h12v1h-12zM0 3h2v1h-2zM3 3h6v1h-6zM10 3h2v1h-2zM0 6h4v1h-4zM8 6h4v1h-4zM0 7h3v1h-3zM9 7h1v1h-1zM0 8h2v1h-2zM0 9h2v1h-2zM10 9h2v1h-2zM0 10h3v1h-3zM9 10h3v1h-3zM0 11h4v1h-4zM8 11h4v1h-4z"/>' +
+    '<path fill="#2a1840" d="M2 3h1v1h-1zM9 3h1v1h-1z"/>' +
+    '<path fill="#ff5fa2" d="M0 4h12v1h-12z"/>' +
+    '<path fill="#ffd23f" d="M0 5h12v1h-12z"/>' +
+    '<path fill="#4b3a6b" d="M4 6h4v1h-4zM3 7h1v1h-1zM8 7h1v1h-1zM2 8h1v1h-1zM9 8h1v1h-1zM2 9h1v1h-1zM9 9h1v1h-1zM3 10h1v1h-1zM8 10h1v1h-1zM4 11h4v1h-4z"/>' +
+    '<path fill="#4f8ff0" d="M4 7h4v1h-4zM3 8h2v1h-2zM6 8h3v1h-3zM3 9h6v1h-6zM4 10h4v1h-4z"/>' +
+    '<path fill="#eaf4ff" d="M10 7h2v1h-2zM5 8h1v1h-1zM10 8h2v1h-2z"/>' +
     '</svg>';
 
   function icon(name) {
@@ -63,7 +68,7 @@
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'nc-btn' + (variant ? ` nc-btn--${variant}` : '');
-    btn.innerHTML = iconName ? icon(iconName) : '';
+    if (iconName) btn.appendChild(NC.svg(icon(iconName)));
     if (label) {
       const span = document.createElement('span');
       span.className = 'nc-btn__label';
@@ -120,13 +125,13 @@
      * that is already in the tree and then changes is not. It also sits BEFORE
      * the hint, because it outranks it -- a notice about what the capture
      * actually IS is worth more than guidance on what to do with it. */
-    /* The family mark: the Nhako butterfly, small, at the head of the pill.
+    /* The family mark: the camera mascot, small, at the head of the pill.
      * Decorative -- the toolbar is already labelled -- and dropped in a narrow
      * window, where every pixel belongs to a control. */
     const mark = document.createElement('span');
     mark.className = 'nc-mark';
     mark.setAttribute('aria-hidden', 'true');
-    mark.innerHTML = BUTTERFLY;
+    mark.appendChild(NC.svg(MASCOT));
     pill.appendChild(mark);
 
     const notice = document.createElement('span');

@@ -300,5 +300,5 @@
     };
   }
 
-  NC.define('annotate', { create, SIZES });
+  NC.define('annotate', { create });
 })();
